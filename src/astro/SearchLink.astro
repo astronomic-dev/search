@@ -1,0 +1,40 @@
+---
+/**
+ * The search button: a real link to the search page (/search, or `href`) that works with no JavaScript. The boot
+ * script (a file, never inline) turns it into the button that opens the dialog. Style it like any link; the slot is
+ * its label.
+ */
+import assets from "virtual:astronomic-search/assets";
+
+interface Props {
+	/** The index this button searches. Default: the site's default index. */
+	index?: string;
+	/** The types its dialog shows. Default: all of the index's types. */
+	types?: string[] | string;
+	/** The dialog's grouping: "type", a facet name, or false. Default: the index setting. */
+	group?: string | false;
+	/** Where the link goes with no JavaScript, and where "See all results" goes. Default: /search under the base. */
+	href?: string;
+	/** The page's main search button: the shortcut opens its dialog and focus returns to it. Default: the first. */
+	main?: boolean;
+	class?: string;
+}
+
+const { index, types, group, main = false, class: className, href: own, ...rest } = Astro.props;
+const base = import.meta.env.BASE_URL;
+const href = own || `${base.endsWith("/") ? base : `${base}/`}search`;
+const typeList = Array.isArray(types) ? types.join(",") : types;
+---
+
+<a
+	href={href}
+	class={className}
+	data-search-trigger
+	data-search-index={index}
+	data-search-types={typeList || undefined}
+	data-search-group={group === undefined ? undefined : String(group)}
+	data-search-main={main ? "" : undefined}
+	data-search-href={own ? "" : undefined}
+	{...rest}><slot>Search</slot></a
+>
+<script is:inline type="module" src={assets.boot}></script>

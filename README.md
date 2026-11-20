@@ -1,0 +1,363 @@
+# @astronomic-dev/search
+
+See it live and read the guide at [astronomic.dev/plugins/search](https://astronomic.dev/plugins/search).
+
+Fuzzy search in a dialog for any Astro site. It indexes your pages and their headings at build time, ships the index as a hashed file, and loads it only when a visitor reaches for search: on hover, focus, a click or the shortcut. Typos still find the page ("nortwind" finds "Northwind rebrand"), and a match inside a section links straight to its heading. Only real matches are marked: a word that a query word equals or starts ("lodes" marks "Lodestar"). A word found only by a typo match shows its result with no mark, so "code" never marks "come" and "button" never marks "bottom" (nor "lodestr" "Lodestar").
+
+- **Records first.** Everything becomes the same small record (a page, a heading's section, or an action), whatever it came from: content collections, built HTML, or your own code.
+- **Three layers.** A headless controller, accessible browser behavior, and a default dialog. Use the dialog as is, or build your own on the lower layers.
+- **No JavaScript needed to get somewhere.** The search button is a real link to `/search` (or a page you pick), and a `<noscript>` part shows your browse links.
+- **Strict CSP friendly.** Scripts ship as files and styles as a constructable stylesheet, so `script-src 'self'; style-src 'self'` works.
+
+## Install
+
+```sh
+pnpm add @astronomic-dev/search
+```
+
+npm and yarn work too. Needs Astro 7 for the integration and components; the core, controller and dom layers work anywhere.
+
+Add the integration to `astro.config.mjs`, then put the search button where your header has room:
+
+```js
+// astro.config.mjs
+import { defineConfig } from "astro/config";
+import search, { collections, html } from "@astronomic-dev/search/astro";
+
+export default defineConfig({
+	site: "https://example.com",
+	integrations: [
+		search({
+			sources: [collections({ docs: { label: "Docs" } }), html({ include: ["/", "/pricing"] })],
+			browse: [{ label: "Docs", href: "/docs" }],
+		}),
+	],
+});
+```
+
+```astro
+---
+import SearchLink from "@astronomic-dev/search/astro/SearchLink.astro";
+import SearchNoscript from "@astronomic-dev/search/astro/SearchNoscript.astro";
+---
+
+<header>
+	<SearchLink class="search-button">Search</SearchLink>
+	<SearchNoscript />
+</header>
+```
+
+That's all: the build writes the index, the manifest and two scripts to `/_search/`, and the button opens the dialog.
+
+## Settings
+
+The settings come in two forms.
+
+**One index.** Put the index settings at the top level. The index is named `default`.
+
+```js
+search({
+	sources: [collections({ docs: { label: "Docs", facets: ["theme"] } }), html({ include: ["/", "/pricing"] })],
+	weights: { title: 3, heading: 2, text: 1, keywords: 1 },
+	group: { dialog: "type" },
+	types: { themes: { weight: 1.5 } },
+	shortcut: { keys: ["mod+k", "/"] },
+	browse: [{ label: "Docs", href: "/docs" }],
+});
+```
+
+**Named indexes.** Each index gets its own files, so a big part of the site (a component catalog, for example) does not slow down the main search.
+
+```js
+search({
+	indexes: {
+		site: { sources: [collections({ docs: {} }), html()] },
+		kit: { sources: [records(loadParts, { types: { kit: { label: "Kit parts" } } })], group: { dialog: false } },
+	},
+	default: "site",
+});
+```
+
+| Setting | Where | What it does |
+| --- | --- | --- |
+| `sources` | index | Where the records come from (see Adapters). Required. |
+| `weights` | index | Field boosts: `title`, `heading`, `text`, `keywords` (a page's keywords and its facet values). Default 3, 2, 1, 1. |
+| `group` | index | `{ dialog, page }`: `"type"`, a facet name, or `false` (one list by score). Default: by type in the dialog, mixed on a page. |
+| `groupOrder` | index | `"best"` (the group with the best match first) or a fixed list of group keys. |
+| `types` | index | Per type: a `label` and a score `weight` (default 1). |
+| `facets` | index | Per facet: a `label` and labels for its `values`. No source or index may name a facet `type` (the content type) or `q` (the search page reads `?q=` as the query); the build fails on one. |
+| `budget` | index | `{ gzipKB }`: a build warning when the index file grows past it. |
+| `suggested` | index | Links the dialog shows in an empty box, under "Suggested" and before recent searches: `[{ label, href, type? }]`, at most 8. One list for every locale, or one per locale (`{ en: [...], fr: [...] }`; a locale the map leaves out shows none). Each `href` must be a canonical URL on this site, as a record's, and `type` one of the index's types; the build fails otherwise. |
+| `synonyms` | index | Groups of words that match each other, one word each: `[["docs", "documentation"], ["price", "cost"]]`. A query word in a group is searched as any word of its group, and a page that matches the other word counts as matching it. Case and accents do not matter. |
+| `pinned` | index | A whole query to pages shown first, in that order: `{ "get started": ["/docs/install", "/docs/first-steps"] }`. The query is matched whole, ignoring case, accents and extra spaces, not word by word. A pinned page shows even if the words do not match it, but only when it passes the type tab, the dialog's `types` and the filters, and it counts once in the counts like any page. Each URL must be a canonical page URL in the index; the build fails otherwise (the dev server warns, since it does not scan built HTML). |
+| `indexes` | site | Named indexes: `{ name: { sources, ... } }`, each with the index settings above. A name is letters, digits, `-` and `_`, starts with a letter or digit, and is unique ignoring case (it becomes part of the index's file names). Built-in object keys (`__proto__`, `constructor`, `prototype`, `toString` and the other `Object.prototype` names) are reserved; the build fails on one. |
+| `default` | site | The index a button uses when it names none. |
+| `shortcut` | site | `{ keys: [...] }` or `false`. Default `["mod+k", "/"]`. |
+| `strings` | site | Labels that replace the US English defaults (see Strings). |
+| `browse` | site | Links for the error state and the no-JavaScript part: `[{ label, href }]`. Each `href` must be a canonical URL on this site (with `trailingSlash: "ignore"`, either slash); the build fails otherwise. |
+
+## Adapters
+
+- **`collections({ name: spec })`** reads Astro content collections. Each entry is a page record, and each heading (levels 2 and 3 by default) starts a section record with its rendered anchor. A spec takes `type` (the records' type, so two collections can share one: `hubs: { type: "learn" }` makes hubs Learn results; default the collection's name), `label` (the type's label; collections of one type may not set different labels, and one without a label takes the other's), `url` (a pattern with `{id}` or `{slug}`), `facets`, `fields` (extra data fields to index, for data-only collections), `title`, `depths`, `keywords` (see Keywords) and `filter`. Drafts and `noindex` entries are always left out. An entry whose `url` gives a URL on another site (a slug of `/other.example/x` with the pattern `/{slug}`) fails the build, naming the collection and entry.
+
+  `filter: (entry) => boolean` keeps the entries it returns `true` for, as a page route's `getStaticPaths` does: `docs: { url: "/docs/{id}", filter: (e) => !unlisted.has(e.id.split("/")[0]) }`. It sees `{ id, collection, data }`. It runs in the integration after the records route, so `data` is the entry's data as JSON (a date is an ISO string), and it must not need `astro:content`.
+- **`html({ include, exclude, type, label, selector })`** scans the built HTML. It reads `[data-search-body]`, else `main`, else the body, and splits the page at its headings. Dialogs (`<dialog>`, `[data-search-dialog]`, `<astronomic-search>`) are never page text, nor is anything `hidden`, `aria-hidden="true"` or `[data-search-ignore]`. Pages with `noindex` are left out. The text gets a space between block elements, at `<br>`, and between the items of a flex or grid container (a `flex` or `grid` class, with any variant prefix, or an inline `display` style), so cards and badges side by side do not run together; inline tags (`span`, `b`, `em` and the like) join with no space. A path segment `*` matches any one segment.
+- **`records(hook, { types, facets })`** takes records your own code returns: a CMS this package does not know, a component catalog, or actions with no URL (an action has a `command` and the dialog fires a `search:command` event).
+
+When two sources give the same URL, the collection record wins over the scanned page.
+
+After the build, every collection and `html()` record URL must be a built page (`<path>.html` or `<path>/index.html`), and every section's anchor an `id` that page renders; the build fails with a list otherwise, so a `url` pattern that misses its route, or a page left out of `getStaticPaths` but not by `filter`, never makes a dead result. With `output: "server"` a page may be rendered on demand, so these are warnings. A `records()` hook's URLs are its own and are not checked. The dev server has no built pages and does not check.
+
+### Keywords
+
+A page can carry extra words that people search for but the page does not use, so "start" finds a page titled "Lodestar". Keywords are indexed in the `keywords` field, with the page's facet values. Each source has its own way to set them:
+
+```md
+---
+title: Lodestar
+searchKeywords: [start, guide, north]   # or "start, guide, north"
+---
+```
+
+```html
+<meta name="search:keywords" content="start, guide, north">
+```
+
+```js
+collections({ docs: { keywords: "tags" } });  // read another field
+collections({ docs: { keywords: false } });   // no keywords
+records(() => [{ id: "en:/ui/button", kind: "page", url: "/ui/button", type: "kit", title: "Button", text: "", keywords: ["cta"] }]);
+```
+
+Only page records take keywords, not headings. Each keyword is trimmed and empty ones are left out. A page keeps its first 20 keywords, and the build warns about any page with more. When a collection page replaces a scanned page, it keeps its own keywords and none of the scanned ones.
+
+## The three layers
+
+| Layer | Import | Use it when |
+| --- | --- | --- |
+| Default dialog | `@astronomic-dev/search/ui` (loaded for you by `SearchLink`) | You want search working today and will theme it with custom properties and parts. |
+| Browser behavior | `@astronomic-dev/search/dom` | You render your own markup and want the dialog, combobox, tabs, shortcut and live region done right. `mountSearch({ trigger, dialog, input, listbox, live, controller, idFor, keys })` returns an `unbind()`. |
+| Controller | `@astronomic-dev/search/controller` | You want only the state: query, loading, results, the active option, type tabs, facet picks and recent searches. No DOM, so it runs anywhere. In an empty dialog box, `state.options` holds the index's suggested links (`kind: "suggested"`, with `url`, `label` and `type`), so a recipe renders them as options. |
+
+The core (`@astronomic-dev/search/core`) holds the record types, the engine and `createSearch`, for code that searches an index without any UI. The dom layer also exports `marked(document, text, ranges, attrs?)`, the one way to render result text: text nodes with a `<mark>` (with `attrs`, default `part="mark"`) around each matched range, never markup.
+
+### Build your own dialog
+
+A dialog of your own still gets the lazy load: call `startBoot({ selector, keys, load })` from `@astronomic-dev/search/boot` in your button's script. It listens for hover, focus, a click and the shortcut, calls `load()` on first use (your app, through `import()`), calls the app's `prepare(trigger, keys)`, then replays the held click or key; if the load fails, a held click follows the link. Give your buttons `data-search-ui="yours"` and pass `selector: '[data-search-trigger][data-search-ui="yours"]'`: the default dialog's boot and app skip any trigger with a `data-search-ui`, so the two never take each other's buttons. Use one kind of dialog per page. The integration's settings reach your code through `virtual:astronomic-search/assets`, which exports `{ boot, app, manifest, index, shortcut, browse, strings }` (`strings` holds the `strings` setting's overrides only); for its types, add `/// <reference types="@astronomic-dev/search/astro/virtual" />` to the file that imports it.
+
+For a worked example, see the Search family in [`@astronomic-dev/ui`](https://astronomic.dev/ui): the shell [`Search.astro`](https://github.com/astronomic-dev/astronomic-ui/blob/main/src/components/Search.astro) (its markup, templates and boot script), the glue [`lib/search-app.ts`](https://github.com/astronomic-dev/astronomic-ui/blob/main/src/lib/search-app.ts) on `controller` and `dom`, and the [`SearchClassic`](https://github.com/astronomic-dev/astronomic-ui/blob/main/src/components/SearchClassic.astro) recipe, which sets only class hooks.
+
+## The dialog element
+
+`SearchLink` loads a small boot script. On first use it loads the app, which defines `<astronomic-search>` and adds one to the page per kind of button. You can also place it yourself.
+
+| Attribute | What it does |
+| --- | --- |
+| `index` | The index to search. Default: the `default` setting. |
+| `types` | A comma list of the types this dialog shows. Default: all of the index's types. |
+| `group` | `type`, a facet name, or `false`: overrides the index's `group.dialog` for this dialog. |
+| `theme` | `light` or `dark`. Default: the visitor's system setting. |
+
+`SearchLink` takes the same choices as props (`index`, `types`, `group`), plus `main` (the button the shortcut belongs to; default the first on the page) and `class`. Its slot is the label.
+
+`href` sets where the link goes with no JavaScript, and where "See all results" goes (with `?q=` and the query added). Default: `/search` under your `base`. Set it when your search page lives elsewhere, or when you have none and want the link to go to a docs index instead:
+
+```astro
+<SearchLink href="/docs">Search the docs</SearchLink>
+```
+
+The build checks the default. When a page has a `SearchLink` with no `href` and the build wrote no `/search` page (`search/index.html` or `search.html`), it logs one warning: add a `/search` page, or set `href`. It is a warning, not an error, because the dialog still works. A `/search` page rendered on demand writes no file, so it warns too; set `href="/search"` to quiet it.
+
+An action record (a `command`, no URL) fires a `search:command` event when it is picked. The event bubbles out of the dialog's shadow root, so listen on the element or on the document: `document.addEventListener("search:command", (e) => run(e.detail.command))`.
+
+### Open on a search
+
+A trigger can open the dialog with a search already typed. Give it any of these attributes; they replace what the box held, and a trigger with none of them opens on the last search. Point its `href` at the same search on your `/search` page, so the link still works with no JavaScript.
+
+| Attribute | What it does |
+| --- | --- |
+| `data-search-query` | The words in the box. |
+| `data-search-type` | The type tab to select. Default: all types. |
+| `data-search-filters` | Facet picks in the search page's URL form: `theme=lodestar`, a name repeated for several values (`theme=lodestar&theme=vega`). Ignored by an engine with no facets. |
+
+```astro
+<SearchLink href="/search?q=dark+mode&type=docs&theme=lodestar" data-search-query="dark mode" data-search-type="docs" data-search-filters="theme=lodestar">
+	Dark mode in the Lodestar docs
+</SearchLink>
+```
+
+Any trigger works, the kit's too: the dom layer's `bindTrigger` reads them (`triggerStart()` from `@astronomic-dev/search/dom`) and calls `controller.open(start)`, which takes `{ query, type, picks }`. The dialog a trigger opens is still the one its `index`, `types` and `group` name, so these links share the page's one dialog and its shortcut.
+
+### Custom properties
+
+Set these on `astronomic-search` or any ancestor. Each has a light default and a dark one.
+
+| Property | Default (light) | Use |
+| --- | --- | --- |
+| `--search-font` | system UI font | Every text in the dialog |
+| `--search-bg` | `#ffffff` | Dialog background |
+| `--search-fg` | `#16181d` | Text |
+| `--search-muted` | `#5c6370` | Snippets, labels, hints |
+| `--search-border` | `#dfe2e7` | Lines and outlines |
+| `--search-line` | the border, 60% toward the background | The rail beside heading results |
+| `--search-accent` | `#2c5fd6` | Links, picked filters, the active option's tint |
+| `--search-accent-fg` | `#ffffff` | Text on the accent |
+| `--search-mark-bg` | `#fdeaa6` | Matched words |
+| `--search-mark-fg` | `inherit` | Matched words' text |
+| `--search-radius` | `0.75rem` | Dialog corners (inner corners follow) |
+| `--search-shadow` | soft drop shadow | Dialog shadow |
+| `--search-width` | `40rem` | Dialog width on wide screens |
+| `--search-backdrop` | dark, 45% | The backdrop behind the dialog |
+| `--search-focus` | `#2c5fd6` | Focus rings |
+
+On screens up to `40rem` wide the dialog fills the screen and respects the safe areas. With reduced motion it opens without animation.
+
+### Parts
+
+Style any piece with `astronomic-search::part(name)`. These names are stable.
+
+| Part | Element |
+| --- | --- |
+| `dialog` | The `<dialog>` |
+| `panel` | The box inside it |
+| `header` | The row with the search box and the close button |
+| `input` | The search box |
+| `close` | The close button |
+| `tabs` | The type tabs row |
+| `tab` | One type tab |
+| `facets` | The filter row |
+| `facet` | One filter button |
+| `results` | The results list |
+| `group` | One group of results |
+| `group-label` | A group's heading: its name, then the group's count (`group-count`) on the right |
+| `group-count` | A group's count, in its `group-label`: grouped by type, the type's match count (as on its tab); else the pages listed |
+| `option` | One result (a page or a heading; `data-kind` says which), or a suggested link (`data-kind="suggested"`) |
+| `option-title` | A page result's title |
+| `option-heading` | A heading result's heading |
+| `snippet` | The text under a result |
+| `mark` | A matched word |
+| `type-label` | A result's type, when results are not grouped |
+| `empty` | The no-results message |
+| `error` | The "not available" message |
+| `recent` | Recent searches |
+| `suggested` | The suggested links in an empty box: also a `group`, with a `group-label` and `option` links |
+| `footer` | The bottom row |
+| `see-all` | The "See all results" link |
+| `kbd` | A key in the footer hints |
+| `status` | The live region (visually hidden) |
+
+## Strings
+
+Every label has a US English default. Replace any of them with the `strings` setting.
+
+| Key | Default |
+| --- | --- |
+| `dialogLabel` | Search |
+| `placeholder` | Search |
+| `close` | Close |
+| `allTypes` | All |
+| `seeAll` | See all results |
+| `loading` | Loading… |
+| `unavailable` | Search is not available right now. |
+| `retry` | Try again |
+| `noResults` | No results for “{query}” |
+| `searchAllTypes` | Search all types |
+| `recent` | Recent searches |
+| `suggested` | Suggested |
+| `browse` | Browse |
+| `facetsLabel` | Filters |
+| `typesLabel` | Content types |
+| `other` | Other |
+| `results` | `{ zero: "No results", one: "1 result", other: "{count} results" }` |
+| `keys` | `{ move: "to move", open: "to open", close: "to close" }` |
+
+## Keyboard
+
+- `mod+k` (Cmd+K on Apple devices, Ctrl+K elsewhere) opens or closes the search from anywhere, text fields included.
+- `/` opens it, except while typing in a text field, a textarea or an editable area.
+- Up and Down move through the results; focus stays in the box. Enter opens the result; Cmd or Ctrl+Enter opens it in a new tab.
+- Escape clears the box, then closes the dialog. Focus returns to the button that opened it.
+- Tab moves to the type tabs (Left and Right switch them), the filters, and "See all results".
+- Nothing runs while an input method is still composing text.
+
+Set `shortcut: false` to turn the shortcut off, or `shortcut: { keys: ["mod+k"] }` to keep only one.
+
+## Analytics
+
+The search sends nothing anywhere. It dispatches three DOM events, which bubble out of the dialog (and out of its shadow root) to `document`, so you can pass them on to your own analytics. They fire from the browser layer, so every dialog built on it sends them too.
+
+| Event | When | `detail` |
+| --- | --- | --- |
+| `search:query` | Once typing stops (the same quiet time as the live result count, 600 ms), for each new query or type tab. A query still waiting fires at once when a result is opened or the dialog closes. | `{ query, index, locale, total, type }`: `total` counts the matching pages, `type` is the active type tab (`null` for all). |
+| `search:noresults` | Right after `search:query`, when that query found nothing. | `{ query, index }` |
+| `search:select` | When a result or a suggested link is opened: Enter, a click, or a new tab. | `{ query, index, id, url, type, position }`: `position` starts at 1, in screen order. A suggested link has `id: null` and `query: ""`. |
+
+Nothing fires for an empty box or while an input method is still composing text. `mountSearch({ events: false })` turns them off.
+
+Plausible:
+
+```js
+document.addEventListener("search:query", (e) => {
+	const { query, total } = e.detail;
+	window.plausible?.("Search", { props: { query, results: String(total) } });
+});
+document.addEventListener("search:noresults", (e) => {
+	window.plausible?.("Search: no results", { props: { query: e.detail.query } });
+});
+document.addEventListener("search:select", (e) => {
+	window.plausible?.("Search: open", { props: { query: e.detail.query, url: e.detail.url ?? "", position: String(e.detail.position) } });
+});
+```
+
+Google Analytics 4 (its recommended `search` event, plus two of your own):
+
+```js
+document.addEventListener("search:query", (e) => {
+	window.gtag?.("event", "search", { search_term: e.detail.query, results: e.detail.total });
+});
+document.addEventListener("search:noresults", (e) => {
+	window.gtag?.("event", "search_no_results", { search_term: e.detail.query });
+});
+document.addEventListener("search:select", (e) => {
+	const { query, url, position } = e.detail;
+	window.gtag?.("event", "select_search_result", { search_term: query, link_url: url, position });
+});
+```
+
+## Content Security Policy
+
+The boot and app scripts are files in `/_search/`, never inline, and the dialog's styles are a constructable stylesheet in its shadow root. A policy of `script-src 'self'; style-src 'self'` works with no changes. The search's own checks run under exactly that policy.
+
+## Caching
+
+Every file in `/_search/` has a hash in its name except `manifest.json`, which names the current index files. Cache the hashed files for a year and the manifest only briefly, so a new deploy is seen. The browser asks for the manifest with `cache: "no-cache"` (it revalidates each time), and if an index file it names is gone (a 404 after a deploy), it fetches the manifest once more and loads the new file.
+
+On Cloudflare (Pages, or Workers static assets), a `public/_headers` file:
+
+```
+/_search/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/_search/manifest.json
+  ! Cache-Control
+  Cache-Control: public, max-age=0, must-revalidate
+```
+
+## Size
+
+Measured on astronomic.dev (Docs, Learn, Themes, the changelog and the main pages; 86 pages, 442 heading sections). The CPU column is Chromium slowed down 4x, like a mid-range phone.
+
+| Records | Index file (gzip) | Load at 4x CPU | Query p95 at 4x CPU (engine only) |
+| --- | --- | --- | --- |
+| 528 | 79 KB | 88 ms | 1.8 ms |
+| 1,200 | 121 KB | 136 ms | 2.6 ms |
+
+The engine-only columns time MiniSearch alone. A full dialog query (the engine, then grouping, filter counts and highlights) took about 10 ms at p95 at 4x CPU on the 528 records.
+
+The boot script on every page is under 2 KB gzip. The app (engine, controller, browser behavior and dialog) is about 20 KB gzip and loads only on first use. MiniSearch, the engine, is about 6 KB of that.
+
+**When to move on (later).** Every record loads into the visitor's browser. At about 5,000 page and heading records, the load on a slowed-down phone passes half a second, and a site that big should move to a Pagefind-based engine, which loads only the parts of the index a query needs. That engine is planned, not built yet.
+
+## License
+
+MIT

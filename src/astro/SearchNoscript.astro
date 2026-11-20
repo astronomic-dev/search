@@ -1,0 +1,28 @@
+---
+/**
+ * For visitors with JavaScript off: the site's browse links (the `browse` setting) in a <noscript>, since the search
+ * itself needs JavaScript. Put it next to the search button, or on the /search page.
+ */
+import assets from "virtual:astronomic-search/assets";
+import { isSafeUrl } from "../dom/safe-url.ts";
+
+interface Props {
+	/** The links' accessible name. Default "Browse". */
+	label?: string;
+	class?: string;
+}
+
+const { label = "Browse", class: className } = Astro.props;
+// Only a relative or http(s) URL becomes a link (the build checks them too).
+const links = assets.browse.filter((link) => isSafeUrl(link.href));
+---
+
+{
+	links.length > 0 && (
+		<noscript>
+			<nav aria-label={label} class={className} data-search-noscript>
+				{links.map((link) => <a href={link.href}>{link.label}</a>)}
+			</nav>
+		</noscript>
+	)
+}

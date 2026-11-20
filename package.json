@@ -1,0 +1,106 @@
+{
+  "name": "@astronomic-dev/search",
+  "version": "0.1.0",
+  "type": "module",
+  "packageManager": "pnpm@11.21.0",
+  "license": "MIT",
+  "description": "Fuzzy site search in a dialog for Astro: a build-time index that loads on first use, a headless controller, accessible browser behavior and a default dialog.",
+  "keywords": [
+    "astro",
+    "astro-component",
+    "astro-integration",
+    "withastro",
+    "search",
+    "site-search",
+    "fuzzy-search"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/astronomic-dev/search.git"
+  },
+  "homepage": "https://astronomic.dev/plugins/search",
+  "bugs": {
+    "url": "https://github.com/astronomic-dev/search/issues"
+  },
+  "files": [
+    "dist/"
+  ],
+  "exports": {
+    "./core": "./src/core/index.ts",
+    "./controller": "./src/controller/index.ts",
+    "./dom": "./src/dom/index.ts",
+    "./boot": "./src/browser/start.ts",
+    "./ui": "./src/ui/index.ts",
+    "./astro": "./src/astro/index.ts",
+    "./astro/records-route": "./src/astro/records-route.ts",
+    "./astro/SearchLink.astro": "./src/astro/SearchLink.astro",
+    "./astro/SearchNoscript.astro": "./src/astro/SearchNoscript.astro",
+    "./astro/virtual": {
+      "types": "./src/astro/virtual.d.ts"
+    },
+    "./test-suite": "./test/browser/suite.mjs"
+  },
+  "publishConfig": {
+    "access": "public",
+    "exports": {
+      "./core": {
+        "types": "./dist/core/index.d.ts",
+        "default": "./dist/core/index.js"
+      },
+      "./controller": {
+        "types": "./dist/controller/index.d.ts",
+        "default": "./dist/controller/index.js"
+      },
+      "./dom": {
+        "types": "./dist/dom/index.d.ts",
+        "default": "./dist/dom/index.js"
+      },
+      "./boot": {
+        "types": "./dist/browser/start.d.ts",
+        "default": "./dist/browser/start.js"
+      },
+      "./ui": {
+        "types": "./dist/ui/index.d.ts",
+        "default": "./dist/ui/index.js"
+      },
+      "./astro": {
+        "types": "./dist/astro/index.d.ts",
+        "default": "./dist/astro/index.js"
+      },
+      "./astro/records-route": {
+        "types": "./dist/astro/records-route.d.ts",
+        "default": "./dist/astro/records-route.js"
+      },
+      "./astro/SearchLink.astro": "./dist/astro/SearchLink.astro",
+      "./astro/SearchNoscript.astro": "./dist/astro/SearchNoscript.astro",
+      "./astro/virtual": {
+        "types": "./dist/astro/virtual.d.ts"
+      }
+    }
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "prepack": "node scripts/prepack.mjs",
+    "test": "node --test --test-reporter=dot test/*.test.ts"
+  },
+  "dependencies": {
+    "esbuild": "0.28.2",
+    "minisearch": "7.2.0",
+    "ultrahtml": "1.7.0"
+  },
+  "peerDependencies": {
+    "astro": "^7.0.0"
+  },
+  "peerDependenciesMeta": {
+    "astro": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/node": "26.6.3",
+    "astro": "^7.3.5",
+    "axe-core": "4.13.0",
+    "typescript": "6.0.3"
+  }
+}

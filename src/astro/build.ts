@@ -25,8 +25,10 @@ export interface IndexInput {
 	weights?: Partial<Weights>;
 	group?: { dialog?: GroupBy; page?: GroupBy };
 	groupOrder?: "best" | string[];
-	/** A warning at build time when the index's largest file is over this size, gzipped. */
+	/** A warning at build time when the index's largest file is over this size, gzipped. Default 300 KB. */
 	budget?: { gzipKB: number };
+	/** Characters of each section's text the index file keeps, for a smaller file. Leave out to keep it whole. */
+	clip?: number;
 	/** Per type: a label in place of the source's, and a score `weight` (default 1). */
 	types?: Record<string, { label?: string; weight?: number }>;
 	/** Per facet: its label, and labels for its values. */
@@ -63,6 +65,7 @@ export interface NormalIndex {
 	group: { dialog: GroupBy; page: GroupBy };
 	groupOrder: "best" | string[];
 	budget?: { gzipKB: number };
+	clip?: number;
 	/** The types the sources declare, with the label and weight overrides applied. */
 	types: Record<string, { label: string; weight?: number }>;
 	typeOverrides: Record<string, { label?: string; weight?: number }>;
@@ -84,7 +87,7 @@ export interface Settings {
 }
 
 const SITE_KEYS = ["indexes", "default", "shortcut", "strings", "browse"];
-const INDEX_KEYS = ["sources", "weights", "group", "groupOrder", "budget", "types", "facets", "suggested", "synonyms", "pinned"];
+const INDEX_KEYS = ["sources", "weights", "group", "groupOrder", "budget", "clip", "types", "facets", "suggested", "synonyms", "pinned"];
 /** One word as the engine's tokenizer sees it: no spaces, no punctuation. */
 const WORD = /^[^\n\r\p{Z}\p{P}]+$/u;
 export const MAX_SUGGESTED = 8;
@@ -170,6 +173,17 @@ function checkSynonyms(where: string, input: unknown): string[][] {
 }
 
 /** Pinned results: each query folded and squashed as it is matched, each with a list of URLs. */
+/** The smallest `clip`: shorter text gives snippets with little to show. */
+export const MIN_CLIP = 200;
+
+/** The size warning of an index with no `budget`: past it, set `clip` or a budget of your own. */
+export const DEFAULT_BUDGET_KB = 300;
+
+function checkClip(where: string, input: unknown): number {
+	if (!Number.isInteger(input) || (input as number) < MIN_CLIP) throw new Error(`Search: ${where}: clip must be a whole number of characters, at least ${MIN_CLIP}, not ${JSON.stringify(input)}`);
+	return input as number;
+}
+
 function checkPinned(where: string, input: unknown): Record<string, string[]> {
 	if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error(`Search: ${where}: pinned must map a query to a list of URLs ({ "get started": ["/docs/install"] })`);
 	// No prototype: a query "__proto__" or "constructor" is an own key like any other.
@@ -276,6 +290,7 @@ function normalizeIndex(name: string, input: IndexInput): NormalIndex {
 		group,
 		groupOrder: input.groupOrder ?? "best",
 		...(input.budget ? { budget: input.budget } : {}),
+		...(input.clip !== undefined ? { clip: checkClip(where, input.clip) } : {}),
 		types,
 		typeOverrides,
 		facets,
@@ -335,7 +350,7 @@ export function indexSettings(index: NormalIndex, records: readonly SearchRecord
 	const types = new Map(Object.entries(index.types));
 	for (const r of records) if (!types.has(r.type)) types.set(r.type, applyType({ label: capitalize(r.type) }, own(index.typeOverrides, r.type)));
 	const sorted = Object.fromEntries([...types.keys()].sort().map((t) => [t, types.get(t) as { label: string; weight?: number }]));
-	return { weights: index.weights, group: index.group, groupOrder: index.groupOrder, types: sorted, facets: index.facets };
+	return { weights: index.weights, group: index.group, groupOrder: index.groupOrder, types: sorted, facets: index.facets, ...(index.clip !== undefined ? { clip: index.clip } : {}) };
 }
 
 export const hash10 = (bytes: string | Uint8Array) => createHash("sha256").update(bytes).digest("hex").slice(0, 10);
@@ -454,7 +469,7 @@ export function writeIndexes(
 			gzipKB = Math.max(gzipKB, gzipSync(body).length / 1024);
 		}
 		manifest.indexes[name] = { version: hash10(hashes.sort().join(",")), locales };
-		stats.push({ index: name, records: records.length, files: byLocale.size, gzipKB: Math.round(gzipKB * 10) / 10, ...(index.budget ? { budgetKB: index.budget.gzipKB } : {}) });
+		stats.push({ index: name, records: records.length, files: byLocale.size, gzipKB: Math.round(gzipKB * 10) / 10, budgetKB: index.budget?.gzipKB ?? DEFAULT_BUDGET_KB });
 	}
 	return { manifest, files, stats, warnings };
 }
@@ -462,7 +477,7 @@ export function writeIndexes(
 /** One log line per index, and whether it is over its budget. */
 export function statLine(s: IndexStats): { line: string; over: boolean } {
 	const over = s.budgetKB !== undefined && s.gzipKB > s.budgetKB;
-	const budget = s.budgetKB !== undefined ? ` (budget ${s.budgetKB} KB${over ? ", OVER" : ""})` : "";
+	const budget = s.budgetKB !== undefined ? ` (budget ${s.budgetKB} KB${over ? ", OVER: set the index's clip for a smaller file" : ""})` : "";
 	return { line: `index "${s.index}": ${s.records} records, ${s.files} file${s.files === 1 ? "" : "s"}, ${s.gzipKB} KB gzipped${budget}`, over };
 }
 

@@ -71,20 +71,38 @@ export function matchKey(e: KeyEventLike, spec: string, apple: boolean): boolean
 
 const NOT_TEXT = new Set(["button", "submit", "reset", "checkbox", "radio", "range", "color", "file", "image", "hidden"]);
 
-/** A text input, a textarea, a select, or anything inside contenteditable. Buttons, checkboxes and ranges are not. */
+/** ARIA roles of custom text fields: an editor's div, a custom element's host. */
+const TEXT_ROLES = new Set(["textbox", "searchbox", "combobox", "spinbutton"]);
+
+/** The element's role: its `role` attribute, or the reflected `role` property. */
+function roleOf(el: { role?: unknown; getAttribute?: (name: string) => string | null }): string {
+	const role = el.getAttribute?.("role") ?? el.role;
+	return typeof role === "string" ? role.trim().split(/\s+/)[0]!.toLowerCase() : "";
+}
+
+/**
+ * A text input, a textarea, a select, anything inside contenteditable, or an element with a text-field role (textbox,
+ * searchbox, combobox, spinbutton). Buttons, checkboxes and ranges are not.
+ */
 export function isEditable(target: unknown): boolean {
 	if (!target || typeof target !== "object") return false;
-	const el = target as { tagName?: string; type?: string; isContentEditable?: boolean };
+	const el = target as { tagName?: string; type?: string; isContentEditable?: boolean; role?: unknown; getAttribute?: (name: string) => string | null };
 	if (el.isContentEditable) return true;
+	if (TEXT_ROLES.has(roleOf(el))) return true;
 	const tag = (el.tagName ?? "").toUpperCase();
 	if (tag === "TEXTAREA" || tag === "SELECT") return true;
 	if (tag === "INPUT") return !NOT_TEXT.has((el.type ?? "text").toLowerCase());
 	return false;
 }
 
-/** Where the press really happened: inside a shadow root, the element there, not its host. */
-function originOf(e: KeyEventLike): unknown {
-	return e.composedPath?.()[0] ?? e.target;
+/**
+ * Whether the press happened in a text field: the element itself (inside a shadow root, the element there, not its
+ * host), or any element around it with a text-field role, such as a custom component's host or an editor's wrapper.
+ */
+function inTextField(e: KeyEventLike): boolean {
+	const path = e.composedPath?.() ?? [];
+	if (isEditable(path[0] ?? e.target)) return true;
+	return path.some((n) => !!n && typeof n === "object" && TEXT_ROLES.has(roleOf(n as { role?: unknown; getAttribute?: (name: string) => string | null })));
 }
 
 /** The focused element, through open shadow roots, so focus returns to a field inside a custom element. */
@@ -105,16 +123,18 @@ function composing(e: KeyEventLike): boolean {
 }
 
 /**
- * What a key press does: "open", "toggle" or null. mod+k toggles from anywhere, editable fields too; every other key
- * opens only outside editable fields and other open dialogs, never during IME composition, never with a modifier it
- * does not name.
+ * What a key press does: "open", "toggle" or null. mod+k toggles from the page; in an editable field or another open
+ * dialog it only closes this search when it is open (focus is then in its own box), so it never opens a second search
+ * from another search box. Every other key opens only outside editable fields and other open dialogs, never during IME
+ * composition, never with a modifier it does not name.
  */
 export function shortcutAction(e: KeyEventLike, keys: string[], apple: boolean, open: boolean): "open" | "toggle" | null {
 	if (composing(e)) return null;
 	for (const spec of keys) {
 		if (!matchKey(e, spec, apple)) continue;
-		if (spec.toLowerCase() === "mod+k") return "toggle";
-		if (isEditable(originOf(e)) || inOpenDialog(e)) return null;
+		const busy = inTextField(e) || inOpenDialog(e);
+		if (spec.toLowerCase() === "mod+k") return busy && !open ? null : "toggle";
+		if (busy) return null;
 		// Already open: the press belongs to whatever has focus inside the dialog.
 		return open ? null : "open";
 	}

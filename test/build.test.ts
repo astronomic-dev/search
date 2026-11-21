@@ -115,7 +115,27 @@ test("stats give one line per index and flag a budget", () => {
 	const out = writeIndexes({ default: [rec("en", "/docs/a")] }, settings, minisearchEngine, { base: "/", defaultLocale: "en" });
 	const { line, over } = statLine(out.stats[0] as never);
 	assert.equal(over, true);
-	assert.match(line, /^index "default": 1 records, 1 file, [\d.]+ KB gzipped \(budget 0\.01 KB, OVER\)$/);
+	assert.match(line, /^index "default": 1 records, 1 file, [\d.]+ KB gzipped \(budget 0\.01 KB, OVER: set the index's clip for a smaller file\)$/);
+});
+
+test("an index with no budget gets the default one, 300 KB", () => {
+	const settings = normalizeSettings({ sources: [docs()] });
+	const out = writeIndexes({ default: [rec("en", "/docs/a")] }, settings, minisearchEngine, { base: "/", defaultLocale: "en" });
+	const { line, over } = statLine(out.stats[0] as never);
+	assert.equal(over, false);
+	assert.match(line, /\(budget 300 KB\)$/);
+});
+
+test("clip: a whole number of at least 200, written to the file's settings", () => {
+	assert.throws(() => normalizeSettings({ sources: [docs()], clip: 199 }), /clip must be a whole number of characters, at least 200/);
+	assert.throws(() => normalizeSettings({ sources: [docs()], clip: 500.5 }), /clip/);
+	assert.throws(() => normalizeSettings({ sources: [docs()], clip: "500" as never }), /clip/);
+	const settings = normalizeSettings({ sources: [docs()], clip: 500 });
+	const out = writeIndexes({ default: [rec("en", "/docs/a")] }, settings, minisearchEngine, { base: "/", defaultLocale: "en" });
+	const file = JSON.parse(out.files[0]!.body) as IndexFile;
+	assert.equal(file.settings.clip, 500);
+	const none = writeIndexes({ default: [rec("en", "/docs/a")] }, normalizeSettings({ sources: [docs()] }), minisearchEngine, { base: "/", defaultLocale: "en" });
+	assert.equal((JSON.parse(none.files[0]!.body) as IndexFile).settings.clip, undefined);
 });
 
 test("the writer refuses a file name outside the _search folder", async () => {

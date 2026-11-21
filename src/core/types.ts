@@ -110,6 +110,8 @@ export interface IndexSettings {
 	synonyms?: string[][];
 	/** A folded, squashed query -> canonical page URLs shown first, in that order, when they pass the filters. */
 	pinned?: Record<string, string[]>;
+	/** Characters of each record's text the file keeps. Leave out to keep it whole. Cut words stay searchable. */
+	clip?: number;
 }
 
 /** One engine hit: a record id, its score, and the query terms it matched, by field. */

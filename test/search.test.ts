@@ -85,6 +85,16 @@ test("headings: when the page's own record matches every term and its title, onl
 	assert.deepEqual(slugs("north"), ["setup"]);
 });
 
+test("a word only near the end of a long section links to that section's heading", () => {
+	const p = page("long", "docs", "Guide", "Intro.");
+	const h = heading(p, "deep", "Deep part", `${"filler ".repeat(200)}anchoremulator`);
+	const e = minisearchEngine.load(JSON.parse(JSON.stringify(minisearchEngine.build("site", "en", [p, h], settings))));
+	const [item] = createSearch(e, settings).run({ q: "anchoremulator" }).groups.flatMap((g) => g.items);
+	assert.equal(item?.page.id, p.id);
+	assert.equal(item?.headings[0]?.record.id, h.id);
+	assert.ok(item?.headings[0]?.highlight.snippet.text.includes("anchoremulator"));
+});
+
 test("a page found only by its headings is shown, with the best heading's score", () => {
 	const hits = engine.search("comet");
 	const r = items(searcher.run({ q: "comet", group: false }));

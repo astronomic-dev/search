@@ -18,8 +18,8 @@ interface PageHits {
 	score: number;
 }
 
-/** Matched in the heading or the section's text, not only by the page title it carries. */
-const ownMatch = (hit: EngineHit) => Object.values(hit.match).some((fields) => fields.includes("heading") || fields.includes("text"));
+/** Matched in the heading or the section's text (`more`: its words past the first part), not only by the page title it carries. */
+const ownMatch = (hit: EngineHit) => Object.values(hit.match).some((fields) => fields.includes("heading") || fields.includes("text") || fields.includes("more"));
 /** Matched in the heading text itself. */
 const headingMatch = (hit: EngineHit) => Object.values(hit.match).some((fields) => fields.includes("heading"));
 const inTitle = (hit: EngineHit) => Object.values(hit.match).some((fields) => fields.includes("title"));

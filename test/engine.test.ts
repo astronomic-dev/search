@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { minisearchEngine } from "../src/core/minisearch.ts";
+import { createMinisearchEngine, minisearchEngine } from "../src/core/minisearch.ts";
 import { highlight } from "../src/core/highlight.ts";
 import { foldText } from "../src/core/text.ts";
 import type { IndexSettings, SearchRecord } from "../src/core/types.ts";
@@ -61,12 +61,44 @@ test("build then load round-trips through JSON, records sorted by id", () => {
 	assert.equal(engine.record("en:/poets")?.title, "Tennyson");
 });
 
-test("the A-clip form cuts long text to about 1,000 characters on a word boundary", () => {
-	const long = rec("/long", "Long", "word ".repeat(400).trim());
-	const file = minisearchEngine.build("site", "en", [long], settings);
+test("long text: kept whole by default, every word found, the snippet marks a word near the end", () => {
+	const text = `${"word ".repeat(400)}anchoremulator end`;
+	const file = minisearchEngine.build("site", "en", [rec("/long", "Long", text)], settings);
+	assert.equal(file.records[0]!.text, text);
+	assert.equal(file.data, undefined);
+	const engine = minisearchEngine.load(JSON.parse(JSON.stringify(file)));
+	const hit = engine.search("anchoremulator")[0]!;
+	assert.equal(hit.id, "en:/long");
+	const h = highlight(engine.record(hit.id)!, hit.terms);
+	assert.ok(h.snippet.text.includes("anchoremulator"));
+	assert.equal(h.snippet.ranges.length, 1);
+});
+
+test("clip cuts the kept text on a word boundary; the words past it stay searchable, new ones once each", () => {
+	const clipped = { ...settings, clip: 1000 };
+	const long = rec("/long", "Long", `${"word ".repeat(400)}anchoremulator Word café anchoremulator`);
+	const file = minisearchEngine.build("site", "en", [long, rec("/short", "Short", "anchor")], clipped);
 	assert.ok(file.records[0]!.text.length <= 1001);
 	assert.ok(file.records[0]!.text.endsWith("word…"));
-	assert.equal(file.data, undefined);
+	assert.deepEqual(file.data, { more: { "en:/long": "anchoremulator cafe" } });
+	const engine = minisearchEngine.load(JSON.parse(JSON.stringify(file)));
+	assert.deepEqual(ids(engine.search("anchoremulator")), ["en:/long"]);
+	assert.ok(ids(engine.search("cafe")).includes("en:/long"));
+});
+
+test("a very long word across the cut is found, with clip and without", () => {
+	const word = "x".repeat(586) + "anchoremulator"; // chars 501-1100: across 1,000 and across a 600 clip
+	const text = `${"a".repeat(500)} ${word} tail`;
+	for (const s of [settings, { ...settings, clip: 600 }]) {
+		const engine = minisearchEngine.load(JSON.parse(JSON.stringify(minisearchEngine.build("site", "en", [rec("/w", "W", text)], s))));
+		assert.deepEqual(ids(engine.search(word)), ["en:/w"], String(s.clip));
+	}
+});
+
+test("form B finds the words past the first 1,000 characters too", () => {
+	const b = createMinisearchEngine("B");
+	const file = b.build("site", "en", [rec("/long", "Long", `${"word ".repeat(400)}anchoremulator`)], settings);
+	assert.deepEqual(ids(b.load(JSON.parse(JSON.stringify(file))).search("anchoremulator")), ["en:/long"]);
 });
 
 test("prefix: ten finds Tennyson", () => {

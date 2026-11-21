@@ -38,11 +38,38 @@ test("/ opens from the body and from a button or checkbox", () => {
 	assert.equal(shortcutAction(key("/", { target: checkbox }), keys, false, false), "open");
 });
 
-test("/ does nothing in text fields; mod+k still toggles there", () => {
+test("/ and mod+k do nothing in text fields; mod+k still closes an open search from its own box", () => {
 	for (const target of [textInput, searchInput, textarea, editableChild, select]) {
 		assert.equal(shortcutAction(key("/", { target }), keys, true, false), null, target.tagName);
-		assert.equal(shortcutAction(key("k", { metaKey: true, target }), keys, true, false), "toggle", target.tagName);
+		assert.equal(shortcutAction(key("k", { metaKey: true, target }), keys, true, false), null, target.tagName);
+		assert.equal(shortcutAction(key("k", { metaKey: true, target }), keys, true, true), "toggle", target.tagName);
 	}
+});
+
+test("custom text fields: a text-field role on the element or around it counts as a text field", () => {
+	const attr = (role: string) => ({ tagName: "DIV", getAttribute: (n: string) => (n === "role" ? role : null) });
+	for (const role of ["textbox", "searchbox", "combobox", "spinbutton", "Textbox extra"]) {
+		const el = attr(role);
+		assert.equal(isEditable(el), true, role);
+		assert.equal(shortcutAction(key("k", { metaKey: true, target: el }), keys, true, false), null, role);
+		assert.equal(shortcutAction(key("/", { target: el }), keys, true, false), null, role);
+	}
+	assert.equal(isEditable(attr("button")), false);
+	assert.equal(isEditable({ tagName: "MY-EDITOR", role: "textbox" }), true);
+	// A closed shadow root: the window sees only the host, with its role.
+	const host = { tagName: "FANCY-INPUT", role: "searchbox" };
+	assert.equal(shortcutAction(key("k", { metaKey: true, target: host, composedPath: () => [host, body] }), keys, true, false), null);
+	// An editor's wrapper with the role, the press on a plain span inside it.
+	const span = { tagName: "SPAN" };
+	assert.equal(shortcutAction(key("k", { metaKey: true, target: span, composedPath: () => [span, attr("textbox"), body] }), keys, true, false), null);
+	assert.equal(shortcutAction(key("k", { metaKey: true, target: span, composedPath: () => [span, body] }), keys, true, false), "toggle");
+});
+
+test("mod+k in another open search dialog does not open a second one", () => {
+	const other = { tagName: "DIALOG", open: true };
+	const e = key("k", { metaKey: true, target: searchInput, composedPath: () => [searchInput, other, body] });
+	assert.equal(shortcutAction(e, keys, true, false), null);
+	assert.equal(shortcutAction(key("k", { metaKey: true, target: button, composedPath: () => [button, other, body] }), keys, true, false), null);
 });
 
 test("/ does nothing in a text field inside a shadow root (the window sees the host as the target)", () => {
@@ -50,7 +77,8 @@ test("/ does nothing in a text field inside a shadow root (the window sees the h
 	for (const inner of [textInput, textarea, editableChild]) {
 		const e = key("/", { target: host, composedPath: () => [inner, { tagName: "DIV" }, host, body] });
 		assert.equal(shortcutAction(e, keys, true, false), null, inner.tagName);
-		assert.equal(shortcutAction(key("k", { metaKey: true, target: host, composedPath: () => [inner, host] }), keys, true, false), "toggle");
+		assert.equal(shortcutAction(key("k", { metaKey: true, target: host, composedPath: () => [inner, host] }), keys, true, false), null);
+		assert.equal(shortcutAction(key("k", { metaKey: true, target: host, composedPath: () => [inner, host] }), keys, true, true), "toggle");
 	}
 	// A shadow button is not a text field.
 	assert.equal(shortcutAction(key("/", { target: host, composedPath: () => [button, host] }), keys, true, false), "open");

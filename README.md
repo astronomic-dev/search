@@ -1,5 +1,7 @@
 # @astronomic-dev/search
 
+[![The Astronomic Search page on astronomic.dev: the headline “Help visitors find what they came for” beside a live search for “dark mode” with type filters and results that link to matching headings](https://raw.githubusercontent.com/astronomic-dev/search/main/.github/hero.webp)](https://astronomic.dev/plugins/search)
+
 See it live and read the guide at [astronomic.dev/plugins/search](https://astronomic.dev/plugins/search).
 
 Fuzzy search in a dialog for any Astro site. It indexes your pages and their headings at build time, ships the index as a hashed file, and loads it only when a visitor reaches for search: on hover, focus, a click or the shortcut. Typos still find the page ("nortwind" finds "Northwind rebrand"), and a match inside a section links straight to its heading. Only real matches are marked: a word that a query word equals or starts ("lodes" marks "Lodestar"). A word found only by a typo match shows its result with no mark, so "code" never marks "come" and "button" never marks "bottom" (nor "lodestr" "Lodestar").
@@ -86,7 +88,8 @@ search({
 | `groupOrder` | index | `"best"` (the group with the best match first) or a fixed list of group keys. |
 | `types` | index | Per type: a `label` and a score `weight` (default 1). |
 | `facets` | index | Per facet: a `label` and labels for its `values`. No source or index may name a facet `type` (the content type) or `q` (the search page reads `?q=` as the query); the build fails on one. |
-| `budget` | index | `{ gzipKB }`: a build warning when the index file grows past it. |
+| `budget` | index | `{ gzipKB }`: a build warning when the index file grows past it. Default 300 KB. |
+| `clip` | index | Characters of each section's text the index file keeps, at least 200: for a smaller file on a large site. Leave out to keep the text whole (the default). Words past the cut are still found, and a result still links to their section, but its preview shows the start of the section. The first 1,000 characters of a section rank higher than the rest, with or without `clip`. |
 | `suggested` | index | Links the dialog shows in an empty box, under "Suggested" and before recent searches: `[{ label, href, type? }]`, at most 8. One list for every locale, or one per locale (`{ en: [...], fr: [...] }`; a locale the map leaves out shows none). Each `href` must be a canonical URL on this site, as a record's, and `type` one of the index's types; the build fails otherwise. |
 | `synonyms` | index | Groups of words that match each other, one word each: `[["docs", "documentation"], ["price", "cost"]]`. A query word in a group is searched as any word of its group, and a page that matches the other word counts as matching it. Case and accents do not matter. |
 | `pinned` | index | A whole query to pages shown first, in that order: `{ "get started": ["/docs/install", "/docs/first-steps"] }`. The query is matched whole, ignoring case, accents and extra spaces, not word by word. A pinned page shows even if the words do not match it, but only when it passes the type tab, the dialog's `types` and the filters, and it counts once in the counts like any page. Each URL must be a canonical page URL in the index; the build fails otherwise (the dev server warns, since it does not scan built HTML). |
@@ -273,8 +276,8 @@ Every label has a US English default. Replace any of them with the `strings` set
 
 ## Keyboard
 
-- `mod+k` (Cmd+K on Apple devices, Ctrl+K elsewhere) opens or closes the search from anywhere, text fields included.
-- `/` opens it, except while typing in a text field, a textarea or an editable area.
+- `mod+k` (Cmd+K on Apple devices, Ctrl+K elsewhere) opens or closes the search. In a text field (including an element with the role `textbox`, `searchbox`, `combobox` or `spinbutton`, such as a custom component or an editor) or another open dialog it only closes an open search, so it never opens a second search from another search box.
+- `/` opens it, except while typing in a text field, a textarea, an editable area or an element with one of those roles.
 - Up and Down move through the results; focus stays in the box. Enter opens the result; Cmd or Ctrl+Enter opens it in a new tab.
 - Escape clears the box, then closes the dialog. Focus returns to the button that opened it.
 - Tab moves to the type tabs (Left and Right switch them), the filters, and "See all results".
@@ -361,3 +364,11 @@ The boot script on every page is under 2 KB gzip. The app (engine, controller, b
 ## License
 
 MIT
+
+## More from Astronomic
+
+- [Astronomic UI](https://astronomic.dev/ui): free Astro components and sections on one set of tokens.
+- [Vesper](https://astronomic.dev/themes/vesper): a free Astro theme for a personal blog and portfolio.
+- [Astronomic Starter](https://astronomic.dev/themes/starter): a free Astro starter for a small product site, with a blog and guides.
+- [wp-esc](https://astronomic.dev/learn/wordpress): plan a move from WordPress to Astro or EmDash.
+- [All Astronomic themes](https://astronomic.dev/themes)

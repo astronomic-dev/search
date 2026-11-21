@@ -2,7 +2,7 @@
  * The small script a page with a search button loads (a hashed file in `/_search/`): the shared boot logic
  * (start.ts) for the default dialog's triggers, loading the app by its hashed URL on first use.
  *
- * At build time `__ASTRONOMIC_SEARCH__` is defined as `{ app, manifest, index, shortcut }`.
+ * When the integration starts, `__ASTRONOMIC_SEARCH__` is replaced with `{ app, manifest, index, shortcut }`.
  */
 import { startBoot } from "./start.ts";
 

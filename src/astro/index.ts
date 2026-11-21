@@ -13,7 +13,7 @@ import type { AstroIntegration } from "astro";
 import { scanHtml } from "../adapters/html.ts";
 import { minisearchEngine } from "../core/minisearch.ts";
 import type { UrlOptions } from "../core/url.ts";
-import { builtPageProblems, checkBrowseLinks, collectRecords, hasCollections, normalizeSettings, routeSpecs, safePath, searchPageWarning, statLine, writeIndexes, type RouteData, type SearchOptions } from "./build.ts";
+import { builtPageProblems, checkBrowseLinks, collectRecords, hasCollections, normalizeSettings, routeSpecs, safePath, searchPageUrl, searchPageWarning, statLine, writeIndexes, type RouteData, type SearchOptions } from "./build.ts";
 import { bundleScripts, MANIFEST, OWN_EXT, type Bundle } from "./bundle.ts";
 import { devMiddleware } from "./dev.ts";
 
@@ -43,6 +43,7 @@ export default function search(options: SearchOptions): AstroIntegration {
 	let locales: string[] = [];
 	let onDemand = false;
 	let bundle: Bundle;
+	let searchPage = "/search";
 
 	return {
 		name: "@astronomic-dev/search",
@@ -52,6 +53,7 @@ export default function search(options: SearchOptions): AstroIntegration {
 			"astro:config:setup": async ({ config, injectRoute, updateConfig }) => {
 				urlOptions = { base: config.base, trailingSlash: config.trailingSlash, format: config.build.format, ...(config.site ? { site: config.site } : {}) };
 				checkBrowseLinks(settings.browse, urlOptions);
+				searchPage = searchPageUrl(urlOptions);
 				defaultLocale = config.i18n?.defaultLocale ?? "en";
 				onDemand = config.output === "server";
 				// Astro's locales are tags or { path, codes }; a record's locale is the tag, or the first code.
@@ -61,7 +63,7 @@ export default function search(options: SearchOptions): AstroIntegration {
 				if (hasCollections(settings)) injectRoute({ pattern: `/${RECORDS_PATH}`, entrypoint: new URL(`./records-route${OWN_EXT}`, import.meta.url), prerender: true });
 				const modules: Record<string, string> = {
 					[SPECS]: `export default ${JSON.stringify({ sources: routeSpecs(settings), urlOptions, defaultLocale, locales })};`,
-					[ASSETS]: `export default ${JSON.stringify({ boot: bundle.boot.url, app: bundle.app.url, manifest: bundle.manifest, index: settings.default, shortcut: settings.shortcut, browse: settings.browse, strings: settings.strings })};`,
+					[ASSETS]: `export default ${JSON.stringify({ boot: bundle.boot.url, app: bundle.app.url, manifest: bundle.manifest, searchPage, index: settings.default, shortcut: settings.shortcut, browse: settings.browse, strings: settings.strings })};`,
 				};
 				updateConfig({
 					vite: {
@@ -119,7 +121,7 @@ export default function search(options: SearchOptions): AstroIntegration {
 					else logger.info(line);
 				}
 				// A warning, not an error: the dialog works, only the no-JavaScript link and "See all results" lead nowhere.
-				const missing = await searchPageWarning(out, urlOptions.base);
+				const missing = await searchPageWarning(out, searchPage);
 				if (missing) logger.warn(missing);
 			},
 		},

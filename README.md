@@ -17,7 +17,7 @@ Fuzzy search in a dialog for any Astro site. It indexes your pages and their hea
 pnpm add @astronomic-dev/search
 ```
 
-npm and yarn work too. Needs Astro 7 for the integration and components; the core, controller and dom layers work anywhere.
+npm and yarn work too. Search adds no dependency with an install script (its browser scripts come bundled), so it brings no `pnpm approve-builds` step of its own. Needs Astro 7 for the integration and components; the core, controller and dom layers work anywhere.
 
 Add the integration to `astro.config.mjs`, then put the search button where your header has room:
 
@@ -49,7 +49,71 @@ import SearchNoscript from "@astronomic-dev/search/astro/SearchNoscript.astro";
 </header>
 ```
 
-That's all: the build writes the index, the manifest and two scripts to `/_search/`, and the button opens the dialog.
+The build writes the index, the manifest and two scripts to `/_search/`, and the button opens the dialog. Last, add the search page.
+
+### The search page
+
+The button is a link to `/search` (with your `base`, and a trailing slash when `trailingSlash` is `"always"`, or `"ignore"` with the default `build.format`). Visitors land there with JavaScript off, and from "See all results" in the dialog, which adds the query as `?q=`. The package ships no page, so make one. This one reads `?q=`, lists the matching pages, and shows your browse links with JavaScript off. Style it like any page, or swap in your layout:
+
+```astro
+---
+// src/pages/search.astro: where "See all results" and the no-JavaScript link go.
+import SearchNoscript from "@astronomic-dev/search/astro/SearchNoscript.astro";
+---
+
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="robots" content="noindex" />
+		<title>Search</title>
+	</head>
+	<body>
+		<main>
+			<h1>Search</h1>
+			<form role="search">
+				<label for="q">Search this site</label>
+				<input id="q" name="q" type="search" />
+				<button>Search</button>
+			</form>
+			<p id="search-status" role="status"></p>
+			<ol id="search-results"></ol>
+			<SearchNoscript />
+		</main>
+		<script>
+			import assets from "virtual:astronomic-search/assets";
+			import { loadSearcher } from "@astronomic-dev/search/controller";
+			import { createSearch, minisearchEngine } from "@astronomic-dev/search/core";
+
+			const q = new URLSearchParams(location.search).get("q")?.trim() ?? "";
+			const status = document.querySelector("#search-status")!;
+			const list = document.querySelector("#search-results")!;
+			document.querySelector<HTMLInputElement>("#q")!.value = q;
+
+			if (q) {
+				status.textContent = "Searching…";
+				const lang = document.documentElement.lang;
+				loadSearcher({ index: assets.index, lang, manifestUrl: assets.manifest, fetch: (url, init) => fetch(url, init), engine: minisearchEngine, createSearch })
+					.then((searcher) => {
+						const { total, groups } = searcher.run({ q, group: false, limit: 50 });
+						status.textContent = total === 1 ? "1 result" : `${total} results`;
+						for (const { page, highlight } of groups.flatMap((g) => g.items)) {
+							if (!page.url) continue; // an action record has no page
+							const item = list.appendChild(document.createElement("li"));
+							const link = item.appendChild(document.createElement("a"));
+							link.href = page.url;
+							link.textContent = page.title;
+							item.appendChild(document.createElement("p")).textContent = highlight.snippet.text;
+						}
+					})
+					.catch(() => (status.textContent = "Search is not available right now."));
+			}
+		</script>
+	</body>
+</html>
+```
+
+It searches the default index and ignores the `type` and filter parameters a trigger may add. To search another index, put its name in place of `assets.index`. If your search page lives somewhere else, set `href` on `SearchLink` (see The dialog element).
 
 ## Settings
 
@@ -101,7 +165,7 @@ search({
 
 ## Adapters
 
-- **`collections({ name: spec })`** reads Astro content collections. Each entry is a page record, and each heading (levels 2 and 3 by default) starts a section record with its rendered anchor. A spec takes `type` (the records' type, so two collections can share one: `hubs: { type: "learn" }` makes hubs Learn results; default the collection's name), `label` (the type's label; collections of one type may not set different labels, and one without a label takes the other's), `url` (a pattern with `{id}` or `{slug}`), `facets`, `fields` (extra data fields to index, for data-only collections), `title`, `depths`, `keywords` (see Keywords) and `filter`. Drafts and `noindex` entries are always left out. An entry whose `url` gives a URL on another site (a slug of `/other.example/x` with the pattern `/{slug}`) fails the build, naming the collection and entry.
+- **`collections({ name: spec })`** reads Astro content collections. Each entry is a page record, and each heading (levels 2 and 3 by default) starts a section record with its rendered anchor. A spec takes `type` (the records' type, so two collections can share one: `hubs: { type: "learn" }` makes hubs Learn results; default the collection's name), `label` (the type's label; collections of one type may not set different labels, and one without a label takes the other's), `url` (the page's URL pattern: `{id}` is the entry's id, `{slug}` its `slug` field or else its id; default `/<collection>/{id}`, so `docs: {}` gives `/docs/getting-started`; set it to match your route, such as `blog: { url: "/posts/{slug}" }`; your `base` and `trailingSlash` are applied for you), `facets`, `fields` (extra data fields to index, for data-only collections), `title`, `depths`, `keywords` (see Keywords) and `filter`. Drafts and `noindex` entries are always left out. An entry whose `url` gives a URL on another site (a slug of `/other.example/x` with the pattern `/{slug}`) fails the build, naming the collection and entry.
 
   `filter: (entry) => boolean` keeps the entries it returns `true` for, as a page route's `getStaticPaths` does: `docs: { url: "/docs/{id}", filter: (e) => !unlisted.has(e.id.split("/")[0]) }`. It sees `{ id, collection, data }`. It runs in the integration after the records route, so `data` is the entry's data as JSON (a date is an ISO string), and it must not need `astro:content`.
 - **`html({ include, exclude, type, label, selector })`** scans the built HTML. It reads `[data-search-body]`, else `main`, else the body, and splits the page at its headings. Dialogs (`<dialog>`, `[data-search-dialog]`, `<astronomic-search>`) are never page text, nor is anything `hidden`, `aria-hidden="true"` or `[data-search-ignore]`. Pages with `noindex` are left out. The text gets a space between block elements, at `<br>`, and between the items of a flex or grid container (a `flex` or `grid` class, with any variant prefix, or an inline `display` style), so cards and badges side by side do not run together; inline tags (`span`, `b`, `em` and the like) join with no space. A path segment `*` matches any one segment.
@@ -163,13 +227,15 @@ For a worked example, see the Search family in [`@astronomic-dev/ui`](https://as
 
 `SearchLink` takes the same choices as props (`index`, `types`, `group`), plus `main` (the button the shortcut belongs to; default the first on the page) and `class`. Its slot is the label.
 
-`href` sets where the link goes with no JavaScript, and where "See all results" goes (with `?q=` and the query added). Default: `/search` under your `base`. Set it when your search page lives elsewhere, or when you have none and want the link to go to a docs index instead:
+`href` sets where the link goes with no JavaScript, and where "See all results" goes (with `?q=` and the query added). Default: `/search` under your `base`, with a trailing slash when your `trailingSlash` setting calls for one. Set it when your search page lives elsewhere, or when you have none and want the link to go to a docs index instead:
 
 ```astro
 <SearchLink href="/docs">Search the docs</SearchLink>
 ```
 
-The build checks the default. When a page has a `SearchLink` with no `href` and the build wrote no `/search` page (`search/index.html` or `search.html`), it logs one warning: add a `/search` page, or set `href`. It is a warning, not an error, because the dialog still works. A `/search` page rendered on demand writes no file, so it warns too; set `href="/search"` to quiet it.
+The build checks the default. When a page has a `SearchLink` with no `href` and the build wrote no search page (`search/index.html` or `search.html`), it logs one warning: add a `/search` page, or set `href`. It is a warning, not an error, because the dialog still works. A `/search` page rendered on demand writes no file, so it warns too; set `href="/search"` to quiet it.
+
+With `build.format: "file"`, Astro writes `search.html`, and result links have no `.html`. Most hosts (Cloudflare Pages, Netlify, Vercel) serve `/search` from `search.html` for you. On a host that does not, turn on its clean-URL or rewrite setting.
 
 An action record (a `command`, no URL) fires a `search:command` event when it is picked. The event bubbles out of the dialog's shadow root, so listen on the element or on the document: `document.addEventListener("search:command", (e) => run(e.detail.command))`.
 
@@ -357,7 +423,7 @@ Measured on astronomic.dev (Docs, Learn, Themes, the changelog and the main page
 
 The engine-only columns time MiniSearch alone. A full dialog query (the engine, then grouping, filter counts and highlights) took about 10 ms at p95 at 4x CPU on the 528 records.
 
-The boot script on every page is under 2 KB gzip. The app (engine, controller, browser behavior and dialog) is about 20 KB gzip and loads only on first use. MiniSearch, the engine, is about 6 KB of that.
+The boot script on every page is under 2 KB gzip. The app (engine, controller, browser behavior and dialog) is about 24 KB gzip (23.8 KB measured on a fresh Astro 7.4 site) and loads only on first use. MiniSearch, the engine, is about 6 KB of that.
 
 **When to move on (later).** Every record loads into the visitor's browser. At about 5,000 page and heading records, the load on a slowed-down phone passes half a second, and a site that big should move to a Pagefind-based engine, which loads only the parts of the index a query needs. That engine is planned, not built yet.
 

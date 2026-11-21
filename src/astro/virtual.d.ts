@@ -17,13 +17,15 @@ declare module "virtual:astronomic-search/specs" {
 
 declare module "virtual:astronomic-search/assets" {
 	/**
-	 * The script and manifest URLs (base applied), the default index, the shortcut, the browse links and the `strings`
+	 * The script and manifest URLs (base applied), the default search page's URL (`/search` with the base and the
+	 * site's trailingSlash setting), the default index, the shortcut, the browse links and the `strings`
 	 * setting (overrides only; a recipe fills the rest from the US English defaults).
 	 */
 	const assets: {
 		boot: string;
 		app: string;
 		manifest: string;
+		searchPage: string;
 		index: string;
 		shortcut: { keys: string[] } | false;
 		browse: { label: string; href: string }[];

@@ -1,6 +1,7 @@
 /**
- * Builds dist/, what npm users get: JavaScript and type files from src/ (tsc), the two Astro components and the
- * virtual module types. tsc rewrites relative ".ts" imports in JavaScript only; this script points the type files
+ * Builds dist/, what npm users get: JavaScript and type files from src/ (tsc), the two Astro components, the
+ * virtual module types, and the browser scripts bundled ahead (dist/browser/app.bundle.js and boot.bundle.js), so a
+ * site installs no bundler and no package with an install script. tsc rewrites relative ".ts" imports in JavaScript only; this script points the type files
  * and the components at the ".js" files too, then checks that no ".ts" specifier is left.
  */
 import { execFileSync } from "node:child_process";
@@ -23,6 +24,14 @@ for (const name of readdirSync(join(pkg, "src/astro")).filter((f) => f.endsWith(
 	writeFileSync(join(dist, "astro", name), toJs(readFileSync(join(pkg, "src/astro", name), "utf8")));
 }
 copyFileSync(join(pkg, "src/astro/virtual.d.ts"), join(dist, "astro/virtual.d.ts"));
+// The same esbuild call the integration makes from src/; the entry names from the module tsc just wrote.
+const { compileEntry } = await import("./compile.mjs");
+const { CONFIG_NAME, ENTRIES } = await import(new URL("../dist/astro/bundle.js", import.meta.url).href);
+for (const entry of ENTRIES) {
+	const code = await compileEntry(join(pkg, "src/browser", `${entry}.ts`));
+	if (!code.includes(CONFIG_NAME)) throw new Error(`build: dist/browser/${entry}.bundle.js does not read ${CONFIG_NAME}`);
+	writeFileSync(join(dist, "browser", `${entry}.bundle.js`), code);
+}
 
 const left = [];
 for (const rel of readdirSync(dist, { recursive: true })) {

@@ -151,6 +151,21 @@ test("the dev origin comes from the server's own address, never a Host header", 
 	assert.equal(devOrigin({ resolvedUrls: null, config: { server: { port: 4600 } } }), "http://localhost:4600");
 });
 
+test("the default search page URL follows the base and trailingSlash", async () => {
+	const { searchPageUrl } = await import("../src/astro/build.ts");
+	assert.equal(searchPageUrl({ base: "/", trailingSlash: "never", format: "directory" }), "/search");
+	assert.equal(searchPageUrl({ base: "/", trailingSlash: "always", format: "directory" }), "/search/");
+	// "ignore" follows build.format, as record URLs do.
+	assert.equal(searchPageUrl({ base: "/", trailingSlash: "ignore", format: "directory" }), "/search/");
+	assert.equal(searchPageUrl({ base: "/", trailingSlash: "ignore", format: "file" }), "/search");
+	assert.equal(searchPageUrl({ base: "/docs-site/", trailingSlash: "always", format: "directory", site: "https://example.com" }), "/docs-site/search/");
+	assert.equal(searchPageUrl({ base: "/docs-site", trailingSlash: "never", format: "directory" }), "/docs-site/search");
+	// A base named "search" is joined on, never read as the page itself.
+	assert.equal(searchPageUrl({ base: "/search", trailingSlash: "always", format: "directory" }), "/search/search/");
+	assert.equal(searchPageUrl({ base: "/search/", trailingSlash: "never", format: "directory" }), "/search/search");
+	assert.equal(searchPageUrl({ base: "/search/", trailingSlash: "ignore", format: "file" }), "/search/search");
+});
+
 test("a default SearchLink with no built /search page gives one warning; a search page or an own href gives none", async () => {
 	const { mkdtemp, mkdir, rm, writeFile } = await import("node:fs/promises");
 	const { tmpdir } = await import("node:os");
@@ -162,32 +177,36 @@ test("a default SearchLink with no built /search page gives one warning; a searc
 		await mkdir(join(out, "docs"), { recursive: true });
 		await writeFile(join(out, "index.html"), link("/search"));
 		await writeFile(join(out, "docs/index.html"), link("/search"));
-		const warning = await searchPageWarning(out, "/");
+		const warning = await searchPageWarning(out, "/search");
 		assert.match(warning ?? "", /no \/search page/);
 		assert.match(warning ?? "", /href/);
 
 		// Under a base, the default is /blog/search; the output folder does not hold the base.
-		assert.equal(await searchPageWarning(out, "/blog/"), null);
+		assert.equal(await searchPageWarning(out, "/blog/search"), null);
 		await writeFile(join(out, "index.html"), link("/blog/search"));
-		assert.match((await searchPageWarning(out, "/blog")) ?? "", /\/blog\/search/);
+		assert.match((await searchPageWarning(out, "/blog/search")) ?? "", /\/blog\/search/);
+
+		// With trailingSlash "always", the default link is /search/.
+		await writeFile(join(out, "index.html"), link("/search/"));
+		assert.match((await searchPageWarning(out, "/search/")) ?? "", /no \/search\/ page/);
 
 		// Every link has its own href: no warning.
 		await writeFile(join(out, "index.html"), link("/docs"));
 		await writeFile(join(out, "docs/index.html"), link("/find"));
-		assert.equal(await searchPageWarning(out, "/"), null);
+		assert.equal(await searchPageWarning(out, "/search"), null);
 
 		// An own href that is the default path (a page rendered on demand): no warning.
 		await writeFile(join(out, "index.html"), `<a href="/search" data-search-trigger data-search-href>Search</a>`);
-		assert.equal(await searchPageWarning(out, "/"), null);
+		assert.equal(await searchPageWarning(out, "/search"), null);
 
 		// A built search page, as search/index.html or search.html: no warning.
 		await writeFile(join(out, "index.html"), link("/search"));
 		await mkdir(join(out, "search"));
 		await writeFile(join(out, "search/index.html"), "<html></html>");
-		assert.equal(await searchPageWarning(out, "/"), null);
+		assert.equal(await searchPageWarning(out, "/search"), null);
 		await rm(join(out, "search"), { recursive: true });
 		await writeFile(join(out, "search.html"), "<html></html>");
-		assert.equal(await searchPageWarning(out, "/"), null);
+		assert.equal(await searchPageWarning(out, "/search"), null);
 	} finally {
 		await rm(out, { recursive: true, force: true });
 	}

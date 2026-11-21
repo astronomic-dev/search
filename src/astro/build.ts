@@ -390,12 +390,22 @@ export function safePath(folder: string, name: string): string {
 
 /** The `_search` folder's URL for a base: "/" gives "/_search/". */
 /**
- * The build warning for a SearchLink with no page behind it: a link to the default /search (under the base) when the
- * build wrote no search page there. Null when there is a search page, or when every search link has its own href
- * (SearchLink marks those with data-search-href), so `href="/search"` quiets it for a page rendered on demand.
+ * The default search page's URL: /search with the site's base and its trailingSlash setting ("ignore" follows
+ * build.format, as every record URL does), so "/search", "/search/" or "/docs-site/search/".
  */
-export async function searchPageWarning(out: string, base: string): Promise<string | null> {
-	const href = `${base.endsWith("/") ? base : `${base}/`}search`;
+export function searchPageUrl(o: UrlOptions): string {
+	// The base joined on explicitly: a bare "/search" under base "/search/" reads as the base itself (the site root).
+	const base = o.base.endsWith("/") ? o.base : `${o.base}/`;
+	return cleanUrl(`${base}search`, o) ?? `${base}search`;
+}
+
+/**
+ * The build warning for a SearchLink with no page behind it: a link to the default search page (`href`, from
+ * `searchPageUrl`) when the build wrote no search page there. Null when there is a search page, or when every search
+ * link has its own href (SearchLink marks those with data-search-href), so `href="/search"` quiets it for a page
+ * rendered on demand.
+ */
+export async function searchPageWarning(out: string, href: string): Promise<string | null> {
 	for (const file of ["search/index.html", "search.html"]) {
 		try {
 			await access(join(out, file));

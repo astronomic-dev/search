@@ -2,7 +2,7 @@
  * The search app the boot script loads on first use (a hashed file in `/_search/`): core, the MiniSearch engine, the
  * controller, the dom layer and the default dialog. It defines <astronomic-search> and makes one per trigger key.
  *
- * At build time `__ASTRONOMIC_SEARCH__` is defined as `{ manifest, index, strings, browse }`.
+ * When the integration starts, `__ASTRONOMIC_SEARCH__` is replaced with `{ manifest, index, strings, browse }`.
  */
 import { loadSearcher, type StringsInput } from "../controller/index.ts";
 import { createSearch } from "../core/search.ts";

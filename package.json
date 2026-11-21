@@ -35,6 +35,7 @@
     "./astro/records-route": "./src/astro/records-route.ts",
     "./astro/SearchLink.astro": "./src/astro/SearchLink.astro",
     "./astro/SearchNoscript.astro": "./src/astro/SearchNoscript.astro",
+    "./astro/SearchPage.astro": "./src/astro/SearchPage.astro",
     "./astro/virtual": {
       "types": "./src/astro/virtual.d.ts"
     },
@@ -73,6 +74,7 @@
       },
       "./astro/SearchLink.astro": "./dist/astro/SearchLink.astro",
       "./astro/SearchNoscript.astro": "./dist/astro/SearchNoscript.astro",
+      "./astro/SearchPage.astro": "./dist/astro/SearchPage.astro",
       "./astro/virtual": {
         "types": "./dist/astro/virtual.d.ts"
       }

@@ -2,7 +2,10 @@
  * The search's shared shapes. Frozen after Task 1: every chunk imports these, so a change here is a change to all.
  * No DOM, no Astro, no engine imports.
  */
-export const SCHEMA = 1;
+import type { PackedRecords } from "./pack.ts";
+
+/** 2: `records` is the packed form of core/pack.ts. */
+export const SCHEMA = 2;
 
 export type RecordKind = "page" | "heading" | "action";
 export type RecordSource = "collection" | "html" | "hook" | "emdash";
@@ -146,8 +149,8 @@ export interface IndexFile {
 	index: string;
 	locale: string;
 	settings: IndexSettings;
-	/** The form picked at Checkpoint M decides what is here: records, or records plus a serialized engine index. */
-	records: SearchRecord[];
+	/** The records, packed (core/pack.ts): each page's fields once, its sections as short arrays. */
+	records: PackedRecords;
 	data?: unknown;
 }
 
@@ -178,6 +181,11 @@ export interface Query {
 	limit?: number;
 	/** Headings listed under one page. */
 	headingsPerPage?: number;
+	/**
+	 * Only records with a URL (the search page, which lists links): an action with no URL is left out before the
+	 * page-level AND, so it never decides that only it matches every word. Default false (the dialog runs actions).
+	 */
+	linked?: boolean;
 }
 
 /** [start, end) ranges in a string, for <mark>. */

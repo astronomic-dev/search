@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { collections } from "../src/adapters/collections.ts";
 import { html } from "../src/adapters/html.ts";
 import { records } from "../src/adapters/records.ts";
+import { unpack } from "../src/core/pack.ts";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -73,7 +74,7 @@ test("one file per index per locale, hashed names, and a manifest", () => {
 	const byIndex = { site: [rec("en", "/docs/a"), rec("de", "/de/docs/a"), rec("en", "/", "pages")], kit: [rec("en", "/ui/button", "kit")] };
 	const out = writeIndexes(byIndex, settings, minisearchEngine, { base: "/sub/", defaultLocale: "en" });
 	assert.deepEqual(Object.keys(out.manifest), ["schema", "defaultLocale", "indexes"]);
-	assert.equal(out.manifest.schema, 1);
+	assert.equal(out.manifest.schema, 2);
 	assert.equal(out.manifest.defaultLocale, "en");
 	assert.deepEqual(Object.keys(out.manifest.indexes.site?.locales ?? {}), ["de", "en"]);
 	assert.deepEqual(Object.keys(out.manifest.indexes.kit?.locales ?? {}), ["en"]);
@@ -90,7 +91,7 @@ test("one file per index per locale, hashed names, and a manifest", () => {
 	const en = JSON.parse(out.files.find((f) => f.name.startsWith("site.en."))?.body ?? "{}") as IndexFile;
 	assert.equal(en.index, "site");
 	assert.equal(en.locale, "en");
-	assert.deepEqual(en.records.map((r) => r.id), ["en:/", "en:/docs/a"]);
+	assert.deepEqual(unpack(en.records, "en").map((r) => r.id), ["en:/", "en:/docs/a"]);
 	assert.deepEqual(Object.keys(en.settings.types), ["docs", "pages", "themes"], "only the types the sources list");
 	const kit = JSON.parse(out.files.find((f) => f.name.startsWith("kit."))?.body ?? "{}") as IndexFile;
 	assert.deepEqual(kit.settings.types, { kit: { label: "Kit parts" } });

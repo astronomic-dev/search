@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createMinisearchEngine, minisearchEngine } from "../src/core/minisearch.ts";
+import { unpack } from "../src/core/pack.ts";
 import { highlight } from "../src/core/highlight.ts";
 import { foldText } from "../src/core/text.ts";
 import type { IndexSettings, SearchRecord } from "../src/core/types.ts";
@@ -47,12 +48,12 @@ test("capabilities", () => {
 
 test("build then load round-trips through JSON, records sorted by id", () => {
 	const file = minisearchEngine.build("site", "en", [...records].reverse(), settings);
-	assert.equal(file.schema, 1);
+	assert.equal(file.schema, 2);
 	assert.equal(file.index, "site");
 	assert.equal(file.locale, "en");
 	assert.equal(file.engine, "minisearch");
 	assert.deepEqual(
-		file.records.map((r) => r.id),
+		unpack(file.records, "en").map((r) => r.id),
 		records.map((r) => r.id).sort(),
 	);
 	assert.equal(JSON.stringify(file), JSON.stringify(minisearchEngine.build("site", "en", records, settings)));
@@ -64,7 +65,7 @@ test("build then load round-trips through JSON, records sorted by id", () => {
 test("long text: kept whole by default, every word found, the snippet marks a word near the end", () => {
 	const text = `${"word ".repeat(400)}anchoremulator end`;
 	const file = minisearchEngine.build("site", "en", [rec("/long", "Long", text)], settings);
-	assert.equal(file.records[0]!.text, text);
+	assert.equal(file.records.pages[0]!.text, text);
 	assert.equal(file.data, undefined);
 	const engine = minisearchEngine.load(JSON.parse(JSON.stringify(file)));
 	const hit = engine.search("anchoremulator")[0]!;
@@ -78,8 +79,8 @@ test("clip cuts the kept text on a word boundary; the words past it stay searcha
 	const clipped = { ...settings, clip: 1000 };
 	const long = rec("/long", "Long", `${"word ".repeat(400)}anchoremulator Word café anchoremulator`);
 	const file = minisearchEngine.build("site", "en", [long, rec("/short", "Short", "anchor")], clipped);
-	assert.ok(file.records[0]!.text.length <= 1001);
-	assert.ok(file.records[0]!.text.endsWith("word…"));
+	assert.ok(file.records.pages[0]!.text!.length <= 1001);
+	assert.ok(file.records.pages[0]!.text!.endsWith("word…"));
 	assert.deepEqual(file.data, { more: { "en:/long": "anchoremulator cafe" } });
 	const engine = minisearchEngine.load(JSON.parse(JSON.stringify(file)));
 	assert.deepEqual(ids(engine.search("anchoremulator")), ["en:/long"]);

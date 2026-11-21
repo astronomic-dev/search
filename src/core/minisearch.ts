@@ -1,10 +1,11 @@
 /**
- * The MiniSearch engine. Form A: the file holds the records, and `load` builds the index in the browser. Form B: a
+ * The MiniSearch engine. Form A: the file holds the records (packed, core/pack.ts), and `load` builds the index in the browser. Form B: a
  * serialized MiniSearch index in `data` too. A record's text is kept whole unless the index setting `clip` cuts it.
  */
 import MiniSearch, { type Options, type SearchResult as MiniHit } from "minisearch";
 import { checkSettings } from "./group.ts";
 import { own } from "./own.ts";
+import { byId, pack, unpack } from "./pack.ts";
 import { cutAt, foldText, squash } from "./text.ts";
 import { SCHEMA } from "./types.ts";
 import type { Capabilities, EngineFactory, EngineHit, IndexFile, IndexSettings, SearchEngine, SearchRecord, Weights } from "./types.ts";
@@ -87,8 +88,6 @@ function options(settings: IndexSettings, typeOf: (id: string) => string | undef
 	};
 }
 
-const byId = (a: SearchRecord, b: SearchRecord) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
-
 const toHit = (h: MiniHit, back?: Map<string, string[]>): EngineHit => ({
 	id: h.id,
 	score: h.score,
@@ -132,7 +131,7 @@ export function createMinisearchEngine(form: Form = "A"): EngineFactory {
 				if (words) more[r.id] = words;
 				return { ...r, text };
 			});
-			const file: IndexFile = { schema: SCHEMA, engine: "minisearch", engineVersion: VERSION, index, locale, settings, records };
+			const file: IndexFile = { schema: SCHEMA, engine: "minisearch", engineVersion: VERSION, index, locale, settings, records: pack(records, locale) };
 			if (form === "B") {
 				// Built from the whole text: the same index as form A builds in the browser.
 				const types = new Map(sorted.map((r) => [r.id, r.type]));
@@ -144,16 +143,17 @@ export function createMinisearchEngine(form: Form = "A"): EngineFactory {
 			return file;
 		},
 		load(file: IndexFile): SearchEngine {
-			const records = new Map(file.records.map((r) => [r.id, r]));
+			const all = unpack(file.records, file.locale);
+			const records = new Map(all.map((r) => [r.id, r]));
 			let ms: MiniSearch<SearchRecord>;
 			if (typeof file.data === "string") ms = MiniSearch.loadJSON(file.data, options(file.settings, (id) => records.get(id)?.type, () => undefined));
 			else {
 				const cut = file.data && typeof file.data === "object" ? ((file.data as Partial<ClipData>).more ?? {}) : {};
-				const fields = new Map(file.records.map((r) => [r.id, indexed(r.text, own(cut, r.id))]));
+				const fields = new Map(all.map((r) => [r.id, indexed(r.text, own(cut, r.id))]));
 				ms = new MiniSearch(options(file.settings, (id) => records.get(id)?.type, (id) => fields.get(id)));
-				ms.addAll(file.records);
+				ms.addAll(all);
 			}
-			const list = Object.freeze([...file.records]);
+			const list = Object.freeze(all);
 			const synonyms = synonymMap(file.settings.synonyms);
 			return {
 				name: "minisearch",

@@ -1,5 +1,5 @@
 /**
- * Builds dist/, what npm users get: JavaScript and type files from src/ (tsc), the two Astro components, the
+ * Builds dist/, what npm users get: JavaScript and type files from src/ (tsc), the Astro components, the
  * virtual module types, and the browser scripts bundled ahead (dist/browser/app.bundle.js and boot.bundle.js), so a
  * site installs no bundler and no package with an install script. tsc rewrites relative ".ts" imports in JavaScript only; this script points the type files
  * and the components at the ".js" files too, then checks that no ".ts" specifier is left.

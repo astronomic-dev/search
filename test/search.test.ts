@@ -305,3 +305,16 @@ test("highlights mark only exact and prefix matches, not fuzzy ones; fuzzy hits 
 	// A typo that is not a prefix finds the page with no mark.
 	assert.deepEqual(marks("lodestr", "en:/lode").title, []);
 });
+
+test("linked: an action with no URL is left out before the page-level AND, so a partial page match still shows", () => {
+	const dark = { id: "en:dark-mode", kind: "action", locale: "en", type: "docs", command: "dark", title: "Dark Mode", text: "", facets: {}, source: "hook" } as SearchRecord;
+	const colors = page("colors", "docs", "Dark colors", "The palette.");
+	const e = minisearchEngine.load(JSON.parse(JSON.stringify(minisearchEngine.build("site", "en", [dark, colors], settings))));
+	const s = createSearch(e, settings);
+	// The dialog: the action has every word, so only it shows.
+	assert.deepEqual(items(s.run({ q: "dark mode" })).map((i) => i.page.id), ["en:dark-mode"]);
+	// The search page: with the action left out, no record has every word, so the partial match shows.
+	const r = s.run({ q: "dark mode", linked: true });
+	assert.deepEqual(items(r).map((i) => i.page.id), ["en:/colors"]);
+	assert.equal(r.total, 1);
+});

@@ -4,7 +4,7 @@
  *
  * When the integration starts, `__ASTRONOMIC_SEARCH__` is replaced with `{ manifest, index, strings, browse }`.
  */
-import { loadSearcher, type StringsInput } from "../controller/index.ts";
+import { loadSearcher, type Prefetch, type StringsInput } from "../controller/index.ts";
 import { createSearch } from "../core/search.ts";
 import { minisearchEngine } from "../core/minisearch.ts";
 import { defineSearchElement, SearchElement, TAG, triggerKey } from "../ui/element.ts";
@@ -13,6 +13,23 @@ import type { BrowseLink } from "../ui/render.ts";
 declare const __ASTRONOMIC_SEARCH__: { manifest: string; index: string; strings: StringsInput; browse: BrowseLink[] };
 const config = __ASTRONOMIC_SEARCH__;
 const TRIGGER = "[data-search-trigger]:not([data-search-ui])";
+
+/** The loads boot started (see `usePrefetch`); taken by the first load of their index. */
+let early: Prefetch | undefined;
+
+/**
+ * Hands over the manifest and index file loads boot started alongside this app's own load, so the first load of the
+ * main index uses them in place of fetching again.
+ */
+export function usePrefetch(p: Prefetch): void {
+	early = p;
+}
+
+function take(index: string): Prefetch | undefined {
+	const p = early?.index === index ? early : undefined;
+	if (p) early = undefined;
+	return p;
+}
 
 defineSearchElement({
 	index: config.index,
@@ -27,6 +44,7 @@ defineSearchElement({
 			fetch: (url: string, init?: RequestInit) => fetch(url, init),
 			engine: minisearchEngine,
 			createSearch,
+			prefetch: take(index),
 		}),
 });
 

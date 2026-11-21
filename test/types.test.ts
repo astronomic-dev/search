@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { SCHEMA } from "../src/core/types.ts";
 import type { IndexSettings, Manifest } from "../src/core/types.ts";
 
-test("types load as .ts and the schema is version 1", () => {
-	assert.equal(SCHEMA, 1);
+test("types load as .ts and the schema is version 2", () => {
+	assert.equal(SCHEMA, 2);
 	const settings: IndexSettings = {
 		weights: { title: 3, heading: 2, text: 1, keywords: 1 },
 		group: { dialog: "type", page: false },

@@ -42,7 +42,7 @@ export function createSearch(engine: SearchEngine, settings: IndexSettings): Sea
 				if (!record || (surface && !surface.has(record.type))) continue;
 				const pageId = record.kind === "heading" ? record.pageId : record.id;
 				const page = pageId === undefined ? undefined : record.kind === "heading" ? engine.record(pageId) : record;
-				if (!page || !pageId) continue;
+				if (!page || !pageId || (query.linked && !page.url)) continue;
 				let p = all.get(pageId);
 				if (!p) all.set(pageId, (p = { page, covered: new Set(), headings: [], score: 0 }));
 				for (const t of hit.queryTerms) p.covered.add(t);

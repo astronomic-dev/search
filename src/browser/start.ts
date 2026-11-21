@@ -32,6 +32,11 @@ export interface BootOptions {
 	keys: string[];
 	/** Loads the app on first use; prepare() makes and binds the dialog for a trigger. */
 	load: () => Promise<BootApp>;
+	/**
+	 * Called with the trigger just before each `load()`, to start the index loads alongside the app's (for example
+	 * `prefetch` from the controller, for the trigger's `data-search-index`, handed to the app once it is in).
+	 */
+	preload?: (trigger: HTMLElement) => void;
 }
 
 export function startBoot(options: BootOptions): void {
@@ -49,6 +54,7 @@ export function startBoot(options: BootOptions): void {
 	const main = () => doc.querySelector<HTMLElement>(`${selector}[data-search-main]`) ?? doc.querySelector<HTMLElement>(selector);
 
 	function start(trigger: HTMLElement): Promise<BootApp> {
+		if (!loading) options.preload?.(trigger);
 		loading ??= load().then(
 			(app) => {
 				// The app's own shortcut listener takes over.

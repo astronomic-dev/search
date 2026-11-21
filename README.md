@@ -53,12 +53,13 @@ The build writes the index, the manifest and two scripts to `/_search/`, and the
 
 ### The search page
 
-The button is a link to `/search` (with your `base`, and a trailing slash when `trailingSlash` is `"always"`, or `"ignore"` with the default `build.format`). Visitors land there with JavaScript off, and from "See all results" in the dialog, which adds the query as `?q=`. The package ships no page, so make one. This one reads `?q=`, lists the matching pages, and shows your browse links with JavaScript off. Style it like any page, or swap in your layout:
+The button is a link to `/search` (with your `base`, and a trailing slash when `trailingSlash` is `"always"`, or `"ignore"` with the default `build.format`). Visitors land there with JavaScript off, and from "See all results" in the dialog, which adds the query as `?q=`. Add the page with the `SearchPage` component, inside your own layout. It reads `?q=`, lists the matching pages, and shows your browse links with JavaScript off. It takes `heading` (default "Search", `""` for none), `label` (the search box's label, default "Search this site"), `button` (default "Search") and `class`. It reads `<html lang>` to pick the index's language:
 
 ```astro
 ---
-// src/pages/search.astro: where "See all results" and the no-JavaScript link go.
-import SearchNoscript from "@astronomic-dev/search/astro/SearchNoscript.astro";
+// src/pages/search.astro: where "See all results" and the no-JavaScript link go. Use your own layout in place of
+// this html shell, and keep the noindex tag.
+import SearchPage from "@astronomic-dev/search/astro/SearchPage.astro";
 ---
 
 <html lang="en">
@@ -70,50 +71,13 @@ import SearchNoscript from "@astronomic-dev/search/astro/SearchNoscript.astro";
 	</head>
 	<body>
 		<main>
-			<h1>Search</h1>
-			<form role="search">
-				<label for="q">Search this site</label>
-				<input id="q" name="q" type="search" />
-				<button>Search</button>
-			</form>
-			<p id="search-status" role="status"></p>
-			<ol id="search-results"></ol>
-			<SearchNoscript />
+			<SearchPage />
 		</main>
-		<script>
-			import assets from "virtual:astronomic-search/assets";
-			import { loadSearcher } from "@astronomic-dev/search/controller";
-			import { createSearch, minisearchEngine } from "@astronomic-dev/search/core";
-
-			const q = new URLSearchParams(location.search).get("q")?.trim() ?? "";
-			const status = document.querySelector("#search-status")!;
-			const list = document.querySelector("#search-results")!;
-			document.querySelector<HTMLInputElement>("#q")!.value = q;
-
-			if (q) {
-				status.textContent = "Searching…";
-				const lang = document.documentElement.lang;
-				loadSearcher({ index: assets.index, lang, manifestUrl: assets.manifest, fetch: (url, init) => fetch(url, init), engine: minisearchEngine, createSearch })
-					.then((searcher) => {
-						const { total, groups } = searcher.run({ q, group: false, limit: 50 });
-						status.textContent = total === 1 ? "1 result" : `${total} results`;
-						for (const { page, highlight } of groups.flatMap((g) => g.items)) {
-							if (!page.url) continue; // an action record has no page
-							const item = list.appendChild(document.createElement("li"));
-							const link = item.appendChild(document.createElement("a"));
-							link.href = page.url;
-							link.textContent = page.title;
-							item.appendChild(document.createElement("p")).textContent = highlight.snippet.text;
-						}
-					})
-					.catch(() => (status.textContent = "Search is not available right now."));
-			}
-		</script>
 	</body>
 </html>
 ```
 
-It searches the default index and ignores the `type` and filter parameters a trigger may add. To search another index, put its name in place of `assets.index`. If your search page lives somewhere else, set `href` on `SearchLink` (see The dialog element).
+It searches the default index and ignores the `type` and filter parameters a trigger may add. For another index or other markup, write the page yourself: start from `dist/astro/SearchPage.astro` in the package, with its relative imports changed to `@astronomic-dev/search/controller` and `@astronomic-dev/search/core`, and put another index name in place of `assets.index`. If your search page lives somewhere else, set `href` on `SearchLink` (see The dialog element).
 
 ## Settings
 
@@ -210,13 +174,13 @@ The core (`@astronomic-dev/search/core`) holds the record types, the engine and 
 
 ### Build your own dialog
 
-A dialog of your own still gets the lazy load: call `startBoot({ selector, keys, load })` from `@astronomic-dev/search/boot` in your button's script. It listens for hover, focus, a click and the shortcut, calls `load()` on first use (your app, through `import()`), calls the app's `prepare(trigger, keys)`, then replays the held click or key; if the load fails, a held click follows the link. Give your buttons `data-search-ui="yours"` and pass `selector: '[data-search-trigger][data-search-ui="yours"]'`: the default dialog's boot and app skip any trigger with a `data-search-ui`, so the two never take each other's buttons. Use one kind of dialog per page. The integration's settings reach your code through `virtual:astronomic-search/assets`, which exports `{ boot, app, manifest, index, shortcut, browse, strings }` (`strings` holds the `strings` setting's overrides only); for its types, add `/// <reference types="@astronomic-dev/search/astro/virtual" />` to the file that imports it.
+A dialog of your own still gets the lazy load: call `startBoot({ selector, keys, load })` from `@astronomic-dev/search/boot` in your button's script. It listens for hover, focus, a click and the shortcut, calls `load()` on first use (your app, through `import()`), calls the app's `prepare(trigger, keys)`, then replays the held click or key; if the load fails, a held click follows the link. To fetch the index while your app loads, pass `preload(trigger)` as well: call `prefetch({ index, lang, manifestUrl, fetch })` from `@astronomic-dev/search/controller` there, and hand what it returns to your app's `loadSearcher` as `prefetch`. `loadSearcher` uses it once, and only for the same index and manifest URL. Give your buttons `data-search-ui="yours"` and pass `selector: '[data-search-trigger][data-search-ui="yours"]'`: the default dialog's boot and app skip any trigger with a `data-search-ui`, so the two never take each other's buttons. Use one kind of dialog per page. The integration's settings reach your code through `virtual:astronomic-search/assets`, which exports `{ boot, app, manifest, index, shortcut, browse, strings }` (`strings` holds the `strings` setting's overrides only); for its types, add `/// <reference types="@astronomic-dev/search/astro/virtual" />` to the file that imports it.
 
 For a worked example, see the Search family in [`@astronomic-dev/ui`](https://astronomic.dev/ui): the shell [`Search.astro`](https://github.com/astronomic-dev/astronomic-ui/blob/main/src/components/Search.astro) (its markup, templates and boot script), the glue [`lib/search-app.ts`](https://github.com/astronomic-dev/astronomic-ui/blob/main/src/lib/search-app.ts) on `controller` and `dom`, and the [`SearchClassic`](https://github.com/astronomic-dev/astronomic-ui/blob/main/src/components/SearchClassic.astro) recipe, which sets only class hooks.
 
 ## The dialog element
 
-`SearchLink` loads a small boot script. On first use it loads the app, which defines `<astronomic-search>` and adds one to the page per kind of button. You can also place it yourself.
+`SearchLink` loads a small boot script. On first use it loads the app, which defines `<astronomic-search>` and adds one to the page per kind of button. At the same time it fetches the manifest, then the index file the manifest names, so the index is often in by the time the app is. You can also place it yourself.
 
 | Attribute | What it does |
 | --- | --- |
@@ -395,7 +359,7 @@ document.addEventListener("search:select", (e) => {
 
 ## Content Security Policy
 
-The boot and app scripts are files in `/_search/`, never inline, and the dialog's styles are a constructable stylesheet in its shadow root. A policy of `script-src 'self'; style-src 'self'` works with no changes. The search's own checks run under exactly that policy.
+The boot and app scripts are files in `/_search/`, never inline, and the dialog's styles are a constructable stylesheet in its shadow root. A policy of `script-src 'self'; style-src 'self'` works with no changes. The search's own checks run under exactly that policy. The `SearchPage` script is a small module that Vite may inline in the page when it is under `vite.build.assetsInlineLimit`; a strict policy needs it as a file, so do not raise that limit very high.
 
 ## Caching
 
@@ -414,7 +378,7 @@ On Cloudflare (Pages, or Workers static assets), a `public/_headers` file:
 
 ## Size
 
-Measured on astronomic.dev (Docs, Learn, Themes, the changelog and the main pages; 86 pages, 442 heading sections). The CPU column is Chromium slowed down 4x, like a mid-range phone.
+Measured on astronomic.dev (Docs, Learn, Themes, the changelog and the main pages; 86 pages, 442 heading sections), before the index file stored its records packed. The packed file (schema 2) is about 17% smaller gzipped than the sizes below. The CPU column is Chromium slowed down 4x, like a mid-range phone.
 
 | Records | Index file (gzip) | Load at 4x CPU | Query p95 at 4x CPU (engine only) |
 | --- | --- | --- | --- |
@@ -423,7 +387,7 @@ Measured on astronomic.dev (Docs, Learn, Themes, the changelog and the main page
 
 The engine-only columns time MiniSearch alone. A full dialog query (the engine, then grouping, filter counts and highlights) took about 10 ms at p95 at 4x CPU on the 528 records.
 
-The boot script on every page is under 2 KB gzip. The app (engine, controller, browser behavior and dialog) is about 24 KB gzip (23.8 KB measured on a fresh Astro 7.4 site) and loads only on first use. MiniSearch, the engine, is about 6 KB of that.
+The boot script on every page is about 2 KB gzip (2.07 KB measured). The app (engine, controller, browser behavior and dialog) is about 24 KB gzip (24.1 KB measured) and loads only on first use. MiniSearch, the engine, is about 6 KB of that.
 
 **When to move on (later).** Every record loads into the visitor's browser. At about 5,000 page and heading records, the load on a slowed-down phone passes half a second, and a site that big should move to a Pagefind-based engine, which loads only the parts of the index a query needs. That engine is planned, not built yet.
 

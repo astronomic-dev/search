@@ -49,6 +49,8 @@ export interface MountOptions {
 	navigate?: (url: string, newTab: boolean) => void;
 	/** Live region delay in ms, and the quiet time before search:query. Default 600. */
 	liveDelay?: number;
+	/** Called just before the dialog opens: with the trigger that opened it, or null for the shortcut. */
+	onOpen?: (trigger: HTMLElement | null) => void;
 	/** Dispatch the analytics events (search:query, search:select, search:noresults) on the dialog. Default true. */
 	events?: boolean;
 }
@@ -64,11 +66,19 @@ export function mountSearch(options: MountOptions): () => void {
 	/** Where focus returns on close: set by the trigger or the shortcut that opened the dialog. */
 	let opener: HTMLElement | null = null;
 	const remember = (el: HTMLElement | null) => (opener = el);
+	const fromTrigger = (t: HTMLElement) => {
+		remember(t);
+		options.onOpen?.(t);
+	};
+	const fromShortcut = (returnTo: HTMLElement | null) => {
+		remember(returnTo);
+		options.onOpen?.(null);
+	};
 
 	const events = options.events === false ? null : bindEvents(options.dialog, controller, { delay: options.liveDelay });
 	const unbinds = [
-		...triggers.map((t) => bindTrigger(t, controller, { keys: t === main ? keys : [], apple, onOpen: remember })),
-		bindShortcut(win, keys, controller, { main, apple, onOpen: remember }),
+		...triggers.map((t) => bindTrigger(t, controller, { keys: t === main ? keys : [], apple, onOpen: fromTrigger })),
+		bindShortcut(win, keys, controller, { main, apple, onOpen: fromShortcut }),
 		bindDialog(options.dialog, options.input, controller, {
 			scrollLock: options.scrollLock,
 			show: options.show,

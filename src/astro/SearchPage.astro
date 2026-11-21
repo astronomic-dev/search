@@ -1,0 +1,78 @@
+---
+/**
+ * The search page's body: where "See all results" and the no-JavaScript link go. A heading, a search form, a status
+ * line and the results list; it reads `?q=`, lists the matching pages from the default index, and shows the site's
+ * browse links with JavaScript off. Put it inside your layout in src/pages/search.astro (give that page
+ * `<meta name="robots" content="noindex">`). It reads the page's `<html lang>` to pick the index's language. Its
+ * script is a bundled module (no inline script), so a strict Content Security Policy is fine.
+ */
+import SearchNoscript from "./SearchNoscript.astro";
+
+interface Props {
+	/** The heading. Default "Search". Pass "" to leave it out when your layout has its own. */
+	heading?: string;
+	/** The search box's label. Default "Search this site". */
+	label?: string;
+	/** The search button's words. Default "Search". */
+	button?: string;
+	class?: string;
+}
+
+const { heading = "Search", label = "Search this site", button = "Search", class: className } = Astro.props;
+---
+
+<div class={className}>
+	{heading && <h1>{heading}</h1>}
+	<form role="search">
+		<label for="q">{label}</label>
+		<input id="q" name="q" type="search" />
+		<button>{button}</button>
+	</form>
+	<p id="search-status" role="status"></p>
+	<ol id="search-results"></ol>
+	<SearchNoscript />
+</div>
+<script>
+	import assets from "virtual:astronomic-search/assets";
+	import { loadSearcher } from "../controller/index.ts";
+	import { createSearch, minisearchEngine } from "../core/index.ts";
+
+	// Runs on load, and again after each ClientRouter swap (the module runs once; astro:page-load fires on every
+	// page, the first too). The results list is keyed by the query and the language, so a page kept across a swap
+	// (transition:persist) searches again when either changes; a load a newer run replaced does not render.
+	let run = 0;
+	function setup() {
+		const list = document.querySelector<HTMLElement>("#search-results");
+		const status = document.querySelector("#search-status");
+		const input = document.querySelector<HTMLInputElement>("#q");
+		if (!list || !status || !input) return;
+		const q = new URLSearchParams(location.search).get("q")?.trim() ?? "";
+		const lang = document.documentElement.lang;
+		const key = JSON.stringify([q, lang]);
+		if (list.dataset.searchKey === key) return;
+		list.dataset.searchKey = key;
+		const mine = ++run;
+		list.replaceChildren();
+		status.textContent = "";
+		input.value = q;
+		if (!q) return;
+		status.textContent = "Searching…";
+		loadSearcher({ index: assets.index, lang, manifestUrl: assets.manifest, fetch: (url, init) => fetch(url, init), engine: minisearchEngine, createSearch })
+			.then((searcher) => {
+				if (mine !== run) return;
+				// Links only: an action with no URL is left out before matching (linked), then the first 50 show.
+				const items = searcher.run({ q, group: false, headingsPerPage: 0, linked: true }).groups.flatMap((g) => g.items);
+				status.textContent = items.length === 1 ? "1 result" : `${items.length} results`;
+				for (const { page, highlight } of items.slice(0, 50)) {
+					const item = list.appendChild(document.createElement("li"));
+					const link = item.appendChild(document.createElement("a"));
+					link.href = page.url!;
+					link.textContent = page.title;
+					item.appendChild(document.createElement("p")).textContent = highlight.snippet.text;
+				}
+			})
+			.catch(() => mine === run && (status.textContent = "Search is not available right now."));
+	}
+	setup();
+	document.addEventListener("astro:page-load", setup);
+</script>

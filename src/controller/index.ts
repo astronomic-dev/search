@@ -12,6 +12,7 @@ import { countText, mergeStrings, type Strings, type StringsInput } from "./stri
 
 export { defaultStrings, mergeStrings, countText, fill, type Strings, type StringsInput } from "./strings.ts";
 export { loadSearcher, pickLocale, type LoadOptions } from "./load.ts";
+export { prefetch, type Prefetch } from "./prefetch.ts";
 export { recentKey, type RecentStorage } from "./recent.ts";
 
 export interface ControllerOptions {

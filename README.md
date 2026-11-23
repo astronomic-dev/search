@@ -416,6 +416,7 @@ Escape `<`, `>` and `&` in the JSON so it cannot close the tag. Only `manifest` 
 | `takeover.skip` | `".no-search-takeover"` | Forms that match this selector, or are inside it, are left alone. |
 | `takeover.allowFields` | `["lang"]` | Hidden input names a form may carry and still be taken over. |
 | `standDown` | `null` | The name of another live search on the page. When set, takeover is off. Placements still work. |
+| `theme` | none | `"light"` or `"dark"`. The dialogs, the takeover's stand-in box and the results page use it whatever the device's color scheme. Left out (or any other value), they follow the device. |
 
 The embed does nothing in a browser without constructable stylesheets (Safari before 16.4). Every form and link stays native there.
 

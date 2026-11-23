@@ -9,6 +9,9 @@ import type { Prefetch } from "../controller/prefetch.ts";
 import { mountResultsPage } from "../results/mount.ts";
 
 export function mountEmbedResults(root: HTMLElement, config: EmbedConfig, prefetch?: Prefetch): () => void {
+	// The results page's shadow root styles its host: a theme attribute there wins over the device's color scheme. A
+	// theme the server printed on the mount stays.
+	if (config.theme && !root.hasAttribute("theme")) root.setAttribute("theme", config.theme);
 	return mountResultsPage(root, {
 		manifest: config.manifest,
 		index: config.index,

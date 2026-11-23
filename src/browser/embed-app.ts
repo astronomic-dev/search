@@ -32,7 +32,16 @@ export function createEmbedApp(config: EmbedConfig): EmbedApp {
 		results: config.results,
 		seeAll: embedSeeAll(config),
 	});
-	const main = app.dialog(defaultKey(config.index), config.keys);
+	/**
+	 * Each dialog the app makes or finds, with the config's theme on it unless it has a theme of its own (a host
+	 * script's change stays). A theme attribute wins over the device.
+	 */
+	const dialog: SearchApp["dialog"] = (key, keys) => {
+		const el = app.dialog(key, keys);
+		if (config.theme && !el.hasAttribute("theme")) el.setAttribute("theme", config.theme);
+		return el;
+	};
+	const main = dialog(defaultKey(config.index), config.keys);
 	/** Counts opens, so an open that a reentrant one overtook stops (see openFrom). */
 	let opens = 0;
 
@@ -53,11 +62,12 @@ export function createEmbedApp(config: EmbedConfig): EmbedApp {
 
 	return {
 		...app,
+		dialog,
 		main,
 		openFrom(source, start, opener) {
 			const n = ++opens;
 			const owner = source.closest("[data-search-placement]") ?? source;
-			const el = app.dialog(triggerKey(owner, config.index));
+			const el = dialog(triggerKey(owner, config.index));
 			closeOthers(el);
 			// A newer open started while the others closed: that one stays.
 			if (n !== opens) return el;

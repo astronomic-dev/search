@@ -40,6 +40,11 @@ export interface EmbedConfig {
 	};
 	/** Name of another live search found on the page; when set, takeover is off (placements still work). */
 	standDown?: string | null;
+	/**
+	 * "light" or "dark": the dialogs, the takeover proxy and the results page use it whatever the device's color
+	 * scheme. Left out (or any other value): they follow the device.
+	 */
+	theme?: "light" | "dark";
 }
 
 export const CONFIG_TAG = 'script[type="application/json"][data-search-config]';
@@ -152,6 +157,7 @@ export function parseEmbedConfig(text: string | null | undefined, doc?: Pick<Doc
 		standDown,
 	};
 	if (typeof data.lang === "string" && data.lang) config.lang = data.lang;
+	if (data.theme === "light" || data.theme === "dark") config.theme = data.theme;
 	return config;
 }
 

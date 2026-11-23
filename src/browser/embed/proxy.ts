@@ -25,7 +25,7 @@ const CSS = /* css */ `
 	color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
-	:host {
+	:host(:not([theme="light"])) {
 		--_bg: var(--search-bg, #17191e);
 		--_fg: var(--search-fg, #eceef2);
 		--_muted: var(--search-muted, #a3a9b5);
@@ -34,6 +34,15 @@ const CSS = /* css */ `
 		--_backdrop: var(--search-backdrop, rgb(0 0 0 / 0.6));
 		color-scheme: dark;
 	}
+}
+:host([theme="dark"]) {
+	--_bg: var(--search-bg, #17191e);
+	--_fg: var(--search-fg, #eceef2);
+	--_muted: var(--search-muted, #a3a9b5);
+	--_border: var(--search-border, #31353d);
+	--_shadow: var(--search-shadow, 0 1.5rem 4rem -1rem rgb(0 0 0 / 0.7), 0 0 0 1px rgb(255 255 255 / 0.08));
+	--_backdrop: var(--search-backdrop, rgb(0 0 0 / 0.6));
+	color-scheme: dark;
 }
 * { box-sizing: border-box; }
 [part="panel"] {
@@ -79,11 +88,13 @@ export interface ProxyField {
 /**
  * Shows the proxy over the page (not yet focused: the caller focuses `input` in its event), with `text` as its
  * placeholder and label. The caller owns it and removes it. `parent` is where it mounts (default: body); the opener's
- * open modal dialog, when there is one, as the rest of the page is inert then and focus() there would fail.
+ * open modal dialog, when there is one, as the rest of the page is inert then and focus() there would fail. `theme`
+ * (the config's) wins over the device's color scheme, as on the dialog.
  */
-export function showProxy(doc: Document, text: string, parent?: Element | null): ProxyField {
+export function showProxy(doc: Document, text: string, parent?: Element | null, theme?: string): ProxyField {
 	const host = doc.createElement("div");
 	host.setAttribute("data-search-proxy", "");
+	if (theme) host.setAttribute("theme", theme);
 	const root = host.attachShadow({ mode: "open" });
 	if (!sheet) {
 		sheet = new CSSStyleSheet();

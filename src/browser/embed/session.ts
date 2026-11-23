@@ -70,9 +70,9 @@ const NO_APP = 3;
 /**
  * The open function. `defaultPlaceholder` is the proxy's text when the source's placement has none. `onFail` runs
  * when the app fails to load during the current open: the proxy's text goes back to the field (focused) or a link
- * follows its href, so the page works as it does with no JavaScript.
+ * follows its href, so the page works as it does with no JavaScript. `theme` (the config's) goes on the proxy.
  */
-export function createOpen(doc: Document, app: AppHandle, defaultPlaceholder: string, onFail: () => void): Open {
+export function createOpen(doc: Document, app: AppHandle, defaultPlaceholder: string, onFail: () => void, theme?: string): Open {
 	/** Ends the current session. */
 	let cur: ((why: number) => void) | null = null;
 
@@ -129,7 +129,7 @@ export function createOpen(doc: Document, app: AppHandle, defaultPlaceholder: st
 		// the composed tree (into a slot, out of a shadow root), so a drawer component's own shadow <dialog> counts.
 		let modal: Element | null | undefined = opener;
 		while (modal && !modal.matches("dialog[open]")) modal = modal.assignedSlot ?? modal.parentElement ?? (modal.parentNode as ShadowRoot | null)?.host;
-		proxy = showProxy(doc, text, modal);
+		proxy = showProxy(doc, text, modal, theme);
 		const input = proxy.input;
 		const focused = () => (input.getRootNode() as ShadowRoot).activeElement === input;
 		input.value = field?.value ?? "";

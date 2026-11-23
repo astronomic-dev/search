@@ -131,7 +131,7 @@ function startEmbed(config: EmbedConfig): void {
 	doc.addEventListener("focusin", warm);
 	if (config.keys.length) win.addEventListener("keydown", onShortcut);
 
-	const open = createOpen(doc, { load, ready: () => ready }, config.strings.placeholder || "Search", off);
+	const open = createOpen(doc, { load, ready: () => ready }, config.strings.placeholder || "Search", off, config.theme);
 	const name = config.takeover.inputName;
 	bindInput(
 		doc,

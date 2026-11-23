@@ -14,6 +14,7 @@ const full = {
 	browse: [{ label: "Docs", href: "/docs" }],
 	takeover: { enabled: true, inputName: "s", skip: ".no-zing", allowFields: ["lang", "post_type"] },
 	standDown: null,
+	theme: "dark",
 };
 
 test("parseEmbedConfig: a full tag gives every field", () => {
@@ -36,6 +37,13 @@ const defaults: EmbedConfig = {
 test('parseEmbedConfig: defaults (index "default", results "/search", queryParam "q", paramPrefix "", keys [], takeover off, inputName "q", skip ".no-search-takeover", allowFields ["lang"])', () => {
 	assert.deepEqual(parseEmbedConfig('{"manifest":"/m.json"}'), defaults);
 	assert.equal(parseEmbedConfig('{"manifest":"/m.json"}')!.lang, undefined);
+	assert.equal(parseEmbedConfig('{"manifest":"/m.json"}')!.theme, undefined);
+});
+
+test('parseEmbedConfig: theme is "light" or "dark"; any other value is left out (the device decides)', () => {
+	for (const theme of ["light", "dark"]) assert.equal(parseEmbedConfig(JSON.stringify({ manifest: "/m.json", theme }))!.theme, theme);
+	for (const theme of ["", "auto", "Light", "DARK", 1, true, null, ["dark"], { dark: true }])
+		assert.equal(parseEmbedConfig(JSON.stringify({ manifest: "/m.json", theme }))!.theme, undefined, JSON.stringify(theme));
 });
 
 test("parseEmbedConfig: bad JSON, no manifest or a non-string manifest gives null (fail open), never a throw", () => {

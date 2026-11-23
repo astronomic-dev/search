@@ -169,7 +169,7 @@ button:focus-visible, a:focus-visible {
 	gap: 0.375rem;
 	padding: 0.625rem 0.75rem 0;
 }
-[part="tab"], [part="facet"], .action, .recent-item {
+[part="tab"], [part="facet"], [part="filters-toggle"], .action, .recent-item {
 	display: inline-flex;
 	align-items: center;
 	gap: 0.375rem;
@@ -188,7 +188,7 @@ button:focus-visible, a:focus-visible {
 	border-color: var(--_fg);
 	color: var(--_bg);
 }
-[part="facet"][aria-pressed="true"] {
+[part="facet"][aria-pressed="true"], [part="filters-toggle"][data-active] {
 	background: var(--_accent);
 	border-color: var(--_accent);
 	color: var(--_accent-fg);
@@ -198,6 +198,10 @@ button:focus-visible, a:focus-visible {
 	font-size: 0.8125rem;
 	opacity: 0.72;
 }
+/* On the accent fill the count takes the full foreground: dimmed, it falls under 4.5:1. */
+[aria-pressed="true"] .count, [data-active] .count { opacity: 1; }
+.filters { display: contents; }
+[part="filters-toggle"] { display: none; }
 .facet-group {
 	display: flex;
 	flex-wrap: wrap;
@@ -403,14 +407,55 @@ button:focus-visible, a:focus-visible {
 		overscroll-behavior-x: contain;
 		scrollbar-width: none;
 		padding-bottom: 0.25rem;
-		scroll-padding-inline: 0.75rem;
+		scroll-padding-inline: 1.5rem;
 	}
-	[part="tabs"]::-webkit-scrollbar { display: none; }
-	[part="tab"] { flex: none; white-space: nowrap; }
+	/* Fade the edge where more of a row hides (data-start, data-end: set on the tabs and facet groups as they scroll). */
+	[data-start], [data-end] { mask-image: linear-gradient(var(--_d, to right), #0000, #000 var(--_s, 0px), #000 calc(100% - var(--_e, 0px)), #0000); }
+	dialog:dir(rtl) { --_d: to left; }
+	[data-start] { --_s: 1.5rem; }
+	[data-end] { --_e: 1.5rem; }
+	[part="tabs"]::-webkit-scrollbar, .facet-group::-webkit-scrollbar { display: none; }
+	/* Pills a little shorter than the touch target, still 40px or more. */
+	[part="tab"], [part="facet"], [part="filters-toggle"] { min-height: min(var(--_target), 2.5rem); }
+	/* On touch the hit area stays 44px: 2px more above and below the 40px pill (3px from the padding box, past the 1px border;
+	   the rows' padding keeps it unclipped). */
+	@media (pointer: coarse) {
+		[part="tab"], [part="facet"], [part="filters-toggle"] { position: relative; }
+		[part="tab"]::after, [part="facet"]::after, [part="filters-toggle"]::after { content: ""; position: absolute; inset: -3px 0; }
+	}
+	/* One line each in a sideways row; chips in the open panel wrap a long value instead. */
+	[part="tab"], :not([data-fold]) + * [part="facet"], .facet-group:not(:only-child) > [part="facet"] { flex: none; white-space: nowrap; }
+	/* One row: the tabs, then a toggle for the facets, or one facet group alone. */
+	.filters { display: flex; align-items: flex-start; }
+	[part="tabs"] { flex: 1; min-width: 0; }
+	[data-fold] [part="tabs"] { padding-inline-end: 0.25rem; }
+	/* The toggle takes half the row at most: a long name ends in an ellipsis (the full name stays its text), the count shows. */
+	[data-fold] [part="filters-toggle"] { display: inline-flex; flex: 0 1 auto; min-width: 0; max-width: 50%; margin: 0.625rem 0.75rem 0; }
+	[part="filters-toggle"] > :first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+	:not([hidden]) + [part="filters-toggle"] { margin-inline-start: 0.25rem; }
+	[part="filters-toggle"] .icon { width: 1rem; }
+	[aria-expanded="true"] .icon { rotate: 180deg; }
+	[data-fold]:not([data-open]) + * { display: none; }
+	:not([data-fold]) + [part="facets"] { padding: 0.375rem 0 0; }
+	/* One row each that scrolls sideways: a lone facet group beside no tabs, or each of two or more groups in the panel
+	   (edge to edge, like the tabs). One group in the panel wraps instead. */
+	:not([data-fold]) + * .facet-group, .facet-group:not(:only-child) {
+		flex: 1 1 100%;
+		min-width: 0;
+		flex-wrap: nowrap;
+		overflow-x: auto;
+		scrollbar-width: none;
+		padding: 0.25rem 0.75rem;
+		scroll-padding-inline: 1.5rem;
+	}
+	.facet-group:not(:only-child) { margin-inline: -0.75rem; }
+	.label { flex: none; }
 }
 @media (forced-colors: active) {
 	[part="option"][aria-selected="true"] { outline: 2px solid Highlight; outline-offset: -2px; }
-	[part="tab"][aria-selected="true"], [part="facet"][aria-pressed="true"] { border-width: 3px; }
+	[part="tab"][aria-selected="true"], [part="facet"][aria-pressed="true"], [part="filters-toggle"][data-active] { border-width: 3px; }
+	/* No edge fades on the tabs or the facet rows: their edges cut plainly. */
+	[data-start], [data-end] { mask-image: none; }
 }
 `;
 

@@ -1,5 +1,5 @@
 /**
- * The search's shared shapes. Frozen after Task 1: every chunk imports these, so a change here is a change to all.
+ * The search's shared shapes. Every part of the package imports these, so a change here is a change to all.
  * No DOM, no Astro, no engine imports.
  */
 import type { PackedRecords } from "./pack.ts";

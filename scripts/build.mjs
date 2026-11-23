@@ -1,6 +1,7 @@
 /**
  * Builds dist/, what npm users get: JavaScript and type files from src/ (tsc), the Astro components, the
- * virtual module types, and the browser scripts bundled ahead (dist/browser/app.bundle.js and boot.bundle.js), so a
+ * virtual module types, the browser scripts bundled ahead (dist/browser/app.bundle.js and boot.bundle.js), and the embed
+ * build (dist/embed/, scripts/build-embed.mjs), so a
  * site installs no bundler and no package with an install script. tsc rewrites relative ".ts" imports in JavaScript only; this script points the type files
  * and the components at the ".js" files too, then checks that no ".ts" specifier is left.
  */
@@ -32,6 +33,9 @@ for (const entry of ENTRIES) {
 	if (!code.includes(CONFIG_NAME)) throw new Error(`build: dist/browser/${entry}.bundle.js does not read ${CONFIG_NAME}`);
 	writeFileSync(join(dist, "browser", `${entry}.bundle.js`), code);
 }
+// The embed build: a boot and hashed chunks for pages with settings at run time (see build-embed.mjs).
+const { buildEmbed } = await import("./build-embed.mjs");
+await buildEmbed(join(dist, "embed"));
 
 const left = [];
 for (const rel of readdirSync(dist, { recursive: true })) {

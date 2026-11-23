@@ -4,5 +4,5 @@
  * It never grows a Pro layout: Pro and kit recipes build on the controller and dom layers instead.
  */
 export { defineSearchElement, SearchElement, TAG, triggerKey, type ElementConfig } from "./element.ts";
-export { marked, renderFacets, renderMessage, renderResults, renderShell, renderTabs, type BrowseLink, type RenderContext, type Shell } from "./render.ts";
+export { marked, renderFacets, renderMessage, renderResults, renderShell, renderTabs, type BrowseLink, type RenderContext, type SeeAll, type SeeAllState, type Shell } from "./render.ts";
 export { css, styleSheet } from "./styles.ts";

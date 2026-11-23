@@ -191,6 +191,14 @@ export function renderFacets(doc: Document, state: State, ctx: RenderContext): H
 }
 
 /**
+ * The name of the toggle that folds the facet groups on a narrow screen: the one group's label (with tabs on its row),
+ * the facets' label for two or more groups, or null for no toggle (no groups, or one group and no tabs: it is a row).
+ */
+export function foldLabel(tabs: boolean, labels: string[], word: string): string | null {
+	return labels.length > 1 ? word : labels.length && tabs ? labels[0]! : null;
+}
+
+/**
  * Where "See all results" goes: the trigger's href with `q` set to the query (or removed when the query is empty), other parameters and the fragment kept.
  * A same-origin href stays a path; `baseURI` is the page's (document.baseURI).
  */
@@ -208,12 +216,40 @@ export function seeAllHref(href: string, q: string, baseURI: string): string {
 	return url.origin === new URL(baseURI).origin ? url.pathname + url.search + url.hash : url.href;
 }
 
+/** What a host's `seeAll` gets: the box's query, type and picks. */
+export interface SeeAllState {
+	query: string;
+	type: string | null;
+	picks: Record<string, string[]>;
+}
+
+/** Builds the dialog's "See all results" href from its base, the box's state and the dialog's index. */
+export type SeeAll = (base: string, s: SeeAllState, index: string) => string;
+
+/** The parts of the element's settings "See all results" reads. */
+export interface SeeAllConfig {
+	results?: string;
+	seeAll?: SeeAll;
+}
+
+/**
+ * The "See all results" href: the base is the first trigger's href, else the config's `results`, else "/search". With
+ * the config's `seeAll`, the host builds it from the base, the state and the index; else seeAllHref.
+ */
+export function seeAllLink(cfg: SeeAllConfig, triggerHref: string | null | undefined, s: SeeAllState, index: string, baseURI: string): string {
+	const base = triggerHref || cfg.results || "/search";
+	return cfg.seeAll ? cfg.seeAll(base, s, index) : seeAllHref(base, s.query.trim(), baseURI);
+}
+
 export interface Shell {
 	dialog: HTMLDialogElement;
 	panel: HTMLElement;
 	input: HTMLInputElement;
 	close: HTMLElement;
 	tablist: HTMLElement;
+	/** The tabs' row: the tablist, then the toggle (shown on a narrow screen with data-fold) for the facets. */
+	filters: HTMLElement;
+	toggle: HTMLElement;
 	facets: HTMLElement;
 	body: HTMLElement;
 	listbox: HTMLElement;
@@ -251,7 +287,10 @@ export function renderShell(doc: Document, ctx: RenderContext): Shell {
 	}) as HTMLInputElement;
 	const close = button(doc, { part: "close", "aria-label": strings.close }, icon(doc, "M5 5l10 10M15 5L5 15"));
 	const tablist = h(doc, "div", { part: "tabs", hidden: "" });
-	const facets = h(doc, "div", { part: "facets", role: "group", "aria-label": strings.facetsLabel, hidden: "" });
+	const facetsId = ctx.idFor("facets:");
+	const facets = h(doc, "div", { part: "facets", id: facetsId, role: "group", "aria-label": strings.facetsLabel, hidden: "" });
+	const toggle = button(doc, { part: "filters-toggle", "aria-expanded": "false", "aria-controls": facetsId }, h(doc, "span", {}), h(doc, "span", { class: "count" }), icon(doc, "M6 8l4 4 4-4"));
+	const filters = h(doc, "div", { class: "filters" }, tablist, toggle);
 	const listbox = h(doc, "div", { part: "results", role: "listbox", "aria-label": strings.dialogLabel, hidden: "" });
 	const message = h(doc, "div", { class: "message" });
 	const body = h(doc, "div", { class: "body" }, listbox, message);
@@ -268,8 +307,8 @@ export function renderShell(doc: Document, ctx: RenderContext): Shell {
 	const footer = h(doc, "div", { part: "footer" }, hints, seeAll);
 	const live = h(doc, "div", { part: "status", class: "visually-hidden" });
 	const header = h(doc, "div", { part: "header" }, h(doc, "label", { class: "field" }, icon(doc, "M9 15.5a6.5 6.5 0 1 0 0-13 6.5 6.5 0 0 0 0 13zM13.75 13.75L17.5 17.5"), input));
-	// The close button sits after the tabs and facets, so Tab goes box, tabs, facets, close; CSS shows it in the header.
-	const panel = h(doc, "div", { part: "panel" }, header, tablist, facets, close, body, footer, live);
+	// The close button sits after the tabs and facets, so Tab goes box, tabs, toggle, facets, close; CSS shows it in the header.
+	const panel = h(doc, "div", { part: "panel" }, header, filters, facets, close, body, footer, live);
 	const dialog = h(doc, "dialog", { part: "dialog" }, panel) as HTMLDialogElement;
-	return { dialog, panel, input, close, tablist, facets, body, listbox, message, seeAll, live };
+	return { dialog, panel, input, close, tablist, filters, toggle, facets, body, listbox, message, seeAll, live };
 }

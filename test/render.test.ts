@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createController, defaultStrings, type State } from "../src/controller/index.ts";
 import type { FacetCount, ResultGroup, SearchRecord, SearchResult } from "../src/core/types.ts";
-import { marked, renderFacets, renderMessage, renderResults, renderShell, renderTabs, seeAllHref, type RenderContext } from "../src/ui/render.ts";
+import { foldLabel, marked, renderFacets, renderMessage, renderResults, renderShell, renderTabs, seeAllHref, seeAllLink, type RenderContext, type SeeAllState } from "../src/ui/render.ts";
 
 /** A stand-in document: just enough DOM for render.ts (createElement, createTextNode, attributes, append). */
 class Text {
@@ -317,10 +317,29 @@ test("facets: a pressed button per value with a count; none without the capabili
 	assert.equal(renderFacets(doc, off, ctx()).length, 0);
 });
 
+test("foldLabel: the one group's label beside tabs, the facets' word for two or more groups, else no toggle", () => {
+	assert.equal(foldLabel(true, ["Theme"], "Filters"), "Theme");
+	assert.equal(foldLabel(true, ["Theme", "Year"], "Filters"), "Filters");
+	assert.equal(foldLabel(false, ["Theme", "Year"], "Filters"), "Filters");
+	// One group and no tabs: the group is the row.
+	assert.equal(foldLabel(false, ["Theme"], "Filters"), null);
+	assert.equal(foldLabel(true, [], "Filters"), null);
+	assert.equal(foldLabel(false, [], "Filters"), null);
+});
+
+test("shell: the facets' toggle is a button that controls the facets", () => {
+	const shell = renderShell(doc, ctx());
+	const toggle = shell.toggle as unknown as El;
+	assert.equal(toggle.getAttribute("part"), "filters-toggle");
+	assert.equal(toggle.getAttribute("type"), "button");
+	assert.equal(toggle.getAttribute("aria-expanded"), "false");
+	assert.equal(toggle.getAttribute("aria-controls"), (shell.facets as unknown as El).getAttribute("id"));
+});
+
 test("shell: every stable part, the input, listbox and live region", () => {
 	const shell = renderShell(doc, ctx());
 	const root = shell.dialog as unknown as El;
-	for (const part of ["panel", "header", "input", "close", "tabs", "facets", "results", "footer", "see-all", "kbd", "status"]) {
+	for (const part of ["panel", "header", "input", "close", "tabs", "filters-toggle", "facets", "results", "footer", "see-all", "kbd", "status"]) {
 		assert.ok(root.parts(part).length > 0, part);
 	}
 	assert.equal(root.getAttribute("part"), "dialog");
@@ -329,11 +348,12 @@ test("shell: every stable part, the input, listbox and live region", () => {
 	assert.equal((shell.close as unknown as El).getAttribute("aria-label"), "Close");
 });
 
-test("shell: the close button comes after the tabs and facets in tab order", () => {
+test("shell: the close button comes after the tabs, the toggle and the facets in tab order", () => {
 	const shell = renderShell(doc, ctx());
 	const panel = shell.panel as unknown as El;
-	const order = panel.children.map((c) => c.getAttribute("part"));
-	assert.deepEqual(order.slice(0, 4), ["header", "tabs", "facets", "close"]);
+	// The tabs' row (no part) holds the tabs, then the facets' toggle.
+	const order = panel.children.flatMap((c) => (c.getAttribute("part") ? [c.getAttribute("part")] : c.children.map((d) => d.getAttribute("part"))));
+	assert.deepEqual(order.slice(0, 5), ["header", "tabs", "filters-toggle", "facets", "close"]);
 	assert.equal((panel.parts("header")[0]!).parts("close").length, 0);
 });
 
@@ -397,4 +417,17 @@ test("See all results: the trigger's href with q set, keeping its other paramete
 	assert.equal(seeAllHref("search", "x", at), "/docs/search?q=x");
 	// Another origin stays a full URL.
 	assert.equal(seeAllHref("https://docs.example.org/find#r", "x", at), "https://docs.example.org/find?q=x#r");
+});
+
+test("without seeAll, the See all href is unchanged; with it, the host builds it from the base, the state and the index", () => {
+	const at = "https://example.com/docs/page";
+	const s: SeeAllState = { query: " dark mode ", type: "docs", picks: { theme: ["vega"] } };
+	assert.equal(seeAllLink({}, "/find#r", s, "main", at), seeAllHref("/find#r", "dark mode", at), "the trigger's href, as today");
+	assert.equal(seeAllLink({}, null, s, "main", at), "/search?q=dark%20mode", "no trigger: /search");
+	assert.equal(seeAllLink({ results: "/results/" }, null, s, "main", at), "/results/?q=dark%20mode", "no trigger: the config's results URL");
+	assert.equal(seeAllLink({ results: "/results/" }, "/find", s, "main", at), "/find?q=dark%20mode", "a trigger wins");
+	const calls: unknown[] = [];
+	const seeAll = (base: string, st: typeof s, index: string) => (calls.push([base, st, index]), `${base}?s=${st.query.trim()}&z_index=${index}`);
+	assert.equal(seeAllLink({ results: "/", seeAll }, null, s, "blog", at), "/?s=dark mode&z_index=blog");
+	assert.deepEqual(calls, [["/", s, "blog"]]);
 });

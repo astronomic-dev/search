@@ -13,7 +13,7 @@ import { createController, type Controller, type State, type StringsInput } from
 import { own } from "../core/own.ts";
 import type { GroupBy, IndexSettings, Searcher } from "../core/types.ts";
 import { bindTabs, createIdFor, mountSearch } from "../dom/index.ts";
-import { renderFacets, renderMessage, renderResults, renderShell, renderTabs, seeAllHref, type BrowseLink, type RenderContext, type Shell } from "./render.ts";
+import { foldLabel, renderFacets, renderMessage, renderResults, renderShell, renderTabs, seeAllLink, type BrowseLink, type RenderContext, type SeeAll, type Shell } from "./render.ts";
 import { styleSheet } from "./styles.ts";
 
 export interface ElementConfig {
@@ -23,6 +23,10 @@ export interface ElementConfig {
 	load: (index: string) => Promise<Searcher>;
 	strings?: StringsInput;
 	browse?: BrowseLink[];
+	/** The results page, for "See all results" when no trigger gives an href. Default "/search". */
+	results?: string;
+	/** Builds the "See all results" href from the base, the box's query, type and picks, and the index. */
+	seeAll?: SeeAll;
 }
 
 export const TAG = "astronomic-search";
@@ -34,6 +38,9 @@ let config: ElementConfig | null = null;
 export function triggerKey(el: Element, defaultIndex: string): string {
 	return [el.getAttribute("data-search-index") || defaultIndex, el.getAttribute("data-search-types") ?? "", el.getAttribute("data-search-group") ?? ""].join("|");
 }
+
+/** The key of the default dialog for `index`: all types, no group (what a trigger with no other attributes gets). */
+export const defaultKey = (index: string): string => `${index}||`;
 
 function elementKey(el: Element, defaultIndex: string): string {
 	return [el.getAttribute("index") || defaultIndex, el.getAttribute("types") ?? "", el.getAttribute("group") ?? ""].join("|");
@@ -74,13 +81,25 @@ function replace(container: HTMLElement, nodes: Node[]): void {
 export class SearchElement extends HTMLElement {
 	/** Shortcut keys for this dialog: set on the dialog of the page's main trigger only. */
 	keys: string[] = [];
+	/**
+	 * An explicit opener (an embed's field or link) that focus returns to on close; taken by the next open. Set by the
+	 * embed's openFrom only, so it is left out of the published types.
+	 * @internal
+	 */
+	opener: HTMLElement | null = null;
 	#controller: Controller | null = null;
+	/** The index the controller was made for; "See all results" names it. */
+	#searchIndex = "";
 	#shell: Shell | null = null;
 	#settings: IndexSettings | null = null;
 	#unbind: (() => void) | null = null;
 	#unbindTabs: (() => void) | null = null;
 	#triggers: HTMLElement[] = [];
 	#last: Partial<State> = {};
+	/** The facets' toggle's name, or null for no toggle. */
+	#label: string | null = null;
+	/** Whether the facets' panel is open on a narrow screen: UI state only, closed again when the dialog closes. */
+	#fold = false;
 	/** Option ids for this dialog; render and the combobox share it, so a hash collision gets one suffix for both. */
 	#ids: ((recordId: string) => string) | null = null;
 
@@ -122,6 +141,11 @@ export class SearchElement extends HTMLElement {
 			controller: this.#controller!,
 			idFor: this.#idFor(),
 			keys: this.keys,
+			takeOpener: () => {
+				const o = this.opener;
+				this.opener = null;
+				return o;
+			},
 		});
 	}
 
@@ -145,6 +169,7 @@ export class SearchElement extends HTMLElement {
 		if (!config) throw new Error("Search: call defineSearchElement() before using <astronomic-search>");
 		const cfg = config;
 		const index = this.#index();
+		this.#searchIndex = index;
 		const types = this.#types();
 		const group = parseGroup(this.getAttribute("group"));
 
@@ -171,6 +196,24 @@ export class SearchElement extends HTMLElement {
 		shadow.replaceChildren(shell.dialog);
 
 		shell.close.addEventListener("click", () => controller.close());
+		shell.toggle.addEventListener("click", () => {
+			this.#fold = !this.#fold;
+			this.#syncFold();
+		});
+		// On a narrow screen the tabs, and each facet group when there are two or more, are rows that scroll sideways:
+		// keep their edge fades current, and keep the picked tab and chips in view when the rows change size (the
+		// facets' toggle shows or widens, the panel opens, a phone rotates). Scroll does not bubble: the facets listen
+		// in the capture phase for their groups.
+		const edges = () => this.#edges();
+		shell.tablist.addEventListener("scroll", edges, { passive: true });
+		shell.facets.addEventListener("scroll", edges, { passive: true, capture: true });
+		const ro = new ResizeObserver(() => {
+			this.#revealTab();
+			this.#revealChips();
+			edges();
+		});
+		ro.observe(shell.tablist);
+		ro.observe(shell.facets);
 		shadow.addEventListener("click", (e) => this.#action(e));
 		controller.subscribe((s) => this.#render(s));
 		this.#render(controller.getState());
@@ -222,12 +265,60 @@ export class SearchElement extends HTMLElement {
 		return only.length ? all.filter((t) => only.includes(t)) : all;
 	}
 
+	/** The toggle for the facets (it shows on a narrow screen only): its name, the picks' count and open state. */
+	#syncFold(): void {
+		const { filters, toggle, facets } = this.#shell!;
+		const [name, count] = toggle.children as unknown as HTMLElement[];
+		const n = facets.querySelectorAll('[aria-pressed="true"]').length;
+		name!.textContent = this.#label;
+		count!.textContent = String(n);
+		count!.hidden = !n;
+		toggle.toggleAttribute("data-active", n > 0);
+		toggle.setAttribute("aria-expanded", String(this.#fold));
+		filters.toggleAttribute("data-fold", this.#label !== null);
+		filters.toggleAttribute("data-open", this.#fold);
+	}
+
+	/** Scrolls a row sideways to show an item in full, and up to 24px clear of the edge fades where there is room. */
+	#reveal(row: Element, item: Element | null | undefined): void {
+		if (!item) return;
+		// Screen rects, not offsets: scrollLeft moves the same way in either direction (it counts down from 0 right to left).
+		const box = row.getBoundingClientRect();
+		const at = item.getBoundingClientRect();
+		const pad = Math.min(24, Math.max(0, (box.width - at.width) / 2));
+		const end = Math.max(0, at.right + pad - box.right);
+		row.scrollLeft += at.left - end - pad < box.left ? at.left - pad - box.left : end;
+	}
+
+	/** The picked tab into view. By the state's type, not aria-selected: on a render the new tabs are not marked yet. */
+	#revealTab(): void {
+		const type = this.#controller!.getState().type ?? "";
+		this.#reveal(this.#shell!.tablist, [...this.#shell!.tablist.children].find((t) => t.getAttribute("data-type") === type));
+	}
+
+	/** Each facet group's focused chip into view (a keyboard pick keeps focus there), else its first picked chip. A
+	 * group that wraps has nothing to scroll. */
+	#revealChips(): void {
+		for (const group of this.#shell!.facets.children)
+			this.#reveal(group, group.querySelector(":focus") ?? group.querySelector('[aria-pressed="true"]'));
+	}
+
+	/** Marks each sideways row with the edges that hide more of it (data-start, data-end), for the fades. */
+	#edges(): void {
+		for (const row of [this.#shell!.tablist, ...this.#shell!.facets.children]) {
+			const x = Math.abs(row.scrollLeft);
+			row.toggleAttribute("data-start", x > 1);
+			row.toggleAttribute("data-end", x < row.scrollWidth - row.clientWidth - 1);
+		}
+	}
+
 	#render(s: State): void {
 		const shell = this.#shell;
 		if (!shell) return;
 		const last = this.#last;
 		const changed = (k: keyof State) => last[k] !== s[k];
-		if (!["result", "options", "status", "query", "type", "picks", "recent", "capabilities"].some((k) => changed(k as keyof State))) return;
+		if (!["open", "result", "options", "status", "query", "type", "picks", "recent", "capabilities"].some((k) => changed(k as keyof State))) return;
+		if (!s.open) this.#fold = false;
 		this.#last = { ...s };
 		const ctx = this.#context();
 
@@ -239,18 +330,32 @@ export class SearchElement extends HTMLElement {
 
 		const types = this.#tabTypes();
 		const tabs = s.status === "ready" && types.length > 1;
+		const list = shell.tablist;
+		const shown = !list.hidden;
 		if (tabs) {
-			replace(shell.tablist, renderTabs(document, s, ctx, types));
-			if (!this.#unbindTabs) this.#unbindTabs = bindTabs(shell.tablist, this.#controller!, { panel: shell.body });
+			replace(list, renderTabs(document, s, ctx, types));
+			if (!this.#unbindTabs) this.#unbindTabs = bindTabs(list, this.#controller!, { panel: shell.body });
 		}
-		shell.tablist.hidden = !tabs;
+		list.hidden = !tabs;
 
+		// The facet groups are rebuilt on each render (a query edit too): each group that stays keeps its sideways scroll,
+		// by its label's id (one per facet), so the row does not jump back to its start.
+		// A new group has no entry: undefined scrolls it to 0 (a scroll position that is not a number is 0).
+		const scrolled: Record<string, number> = {};
+		for (const g of shell.facets.children) scrolled[g.getAttribute("aria-labelledby")!] = g.scrollLeft;
 		const facets = renderFacets(document, s, ctx);
 		replace(shell.facets, facets);
+		for (const g of facets) g.scrollLeft = scrolled[g.getAttribute("aria-labelledby")!]!;
 		shell.facets.hidden = facets.length === 0;
+		this.#label = foldLabel(tabs, facets.map((g) => g.querySelector(".label")!.textContent!), ctx.strings.facetsLabel);
+		this.#syncFold();
+		// After the toggle's layout: keep the picked tab in view when it changes or the row shows, and picked chips when
+		// the picks change.
+		if (tabs && (changed("type") || !shown)) this.#revealTab();
+		if (changed("picks")) this.#revealChips();
+		this.#edges();
 
-		const base = this.#triggers[0]?.getAttribute("href") || "/search";
-		shell.seeAll.href = seeAllHref(base, s.query.trim(), document.baseURI);
+		shell.seeAll.href = seeAllLink(config!, this.#triggers[0]?.getAttribute("href"), s, this.#searchIndex, document.baseURI);
 	}
 }
 

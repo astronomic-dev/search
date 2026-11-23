@@ -31,6 +31,8 @@
     "./dom": "./src/dom/index.ts",
     "./boot": "./src/browser/start.ts",
     "./ui": "./src/ui/index.ts",
+    "./page": "./src/page/index.ts",
+    "./results": "./src/results/index.ts",
     "./astro": "./src/astro/index.ts",
     "./astro/records-route": "./src/astro/records-route.ts",
     "./astro/SearchLink.astro": "./src/astro/SearchLink.astro",
@@ -63,6 +65,14 @@
       "./ui": {
         "types": "./dist/ui/index.d.ts",
         "default": "./dist/ui/index.js"
+      },
+      "./page": {
+        "types": "./dist/page/index.d.ts",
+        "default": "./dist/page/index.js"
+      },
+      "./results": {
+        "types": "./dist/results/index.d.ts",
+        "default": "./dist/results/index.js"
       },
       "./astro": {
         "types": "./dist/astro/index.d.ts",

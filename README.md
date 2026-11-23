@@ -357,6 +357,139 @@ document.addEventListener("search:select", (e) => {
 });
 ```
 
+## Embed on any server
+
+The embed is a second browser build for a page not built with Astro, such as a CMS theme. It reads its settings at run time from one JSON tag the server prints, so it needs no build step on that site. It uses the same index files, manifest, dialog and `--search-*` custom properties as the integration.
+
+Never load the embed on an Astro page that uses the integration or the kit's search page. Each has its own boot.
+
+### Build output
+
+```sh
+pnpm --dir packages/search build:embed   # or: node scripts/build-embed.mjs <outDir>
+```
+
+`pnpm build` writes the same folder, and the npm package ships it as `dist/embed/`:
+
+- `search-embed.js`: the boot. It has a fixed name and no imports, so load it as a plain module: `<script type="module" src="/search/search-embed.js?ver=1">`. Change `?ver=` on each release.
+- `chunks/embed-app-<hash>.js` and `chunks/embed-results-<hash>.js`: the dialog and the results page. They load only when needed, relative to the boot, so copy the whole folder. Each chunk holds all its own code (there is no shared chunk). Cache them for a year.
+- `engine.json`: the engine the chunks carry (`schema`, `engine`, `engineVersion`). Check that your index files were built for it.
+- `files.json`: `{ "boot": "search-embed.js", "files": [...] }`, every file written. When you deploy a new build, keep the files the previous `files.json` lists for one more release: a cached page or an open tab may still load old chunk names.
+
+The build writes to a staging folder and swaps it in only when it is complete, so a failed build leaves the old output as it was.
+
+### The config tag
+
+Print one tag per page, before or after the boot:
+
+```html
+<script type="application/json" data-search-config>
+{
+  "manifest": "/search-data/manifest.json",
+  "index": "default",
+  "results": "/search",
+  "queryParam": "q",
+  "paramPrefix": "",
+  "keys": ["mod+k", "/"],
+  "strings": { "placeholder": "Search the site" },
+  "browse": [{ "label": "All guides", "href": "/guides" }],
+  "takeover": { "enabled": true, "inputName": "q", "skip": ".no-search-takeover", "allowFields": ["lang"] }
+}
+</script>
+```
+
+Escape `<`, `>` and `&` in the JSON so it cannot close the tag. Only `manifest` is required (an absolute `http(s)` URL or a root-relative path). Every other value has a default, and a wrong value falls back to it:
+
+| Key | Default | What it does |
+| --- | --- | --- |
+| `manifest` | (required) | The manifest URL. With no usable manifest, or a tag that is not JSON, the embed does nothing. |
+| `index` | `"default"` | The index for the shortcut, takeover, the results page, and placements with no `data-search-index`. |
+| `lang` | `<html lang>` | Picks the index locale. |
+| `results` | `"/search"` | The results page URL, for "See all results" and the takeover check. Relative or http(s); any other scheme takes the default. |
+| `queryParam` | `"q"` | The query parameter on the results URL. |
+| `paramPrefix` | `""` | Goes before the type, index and facet parameters. Letters, digits, `_` and `-` only. |
+| `keys` | `[]` | Shortcut keys, such as `["mod+k", "/"]`. They open the default index's dialog. |
+| `strings` | `{}` | Dialog and results page text (see [Strings](#strings)). |
+| `browse` | `[]` | Links shown in an empty dialog. A link whose `href` is not relative or http(s) is dropped. |
+| `takeover.enabled` | `false` | Take over the theme's own search form. |
+| `takeover.inputName` | `"q"` | The name of the theme form's search input. Letters, digits, `_`, `-` and `[]` only. |
+| `takeover.skip` | `".no-search-takeover"` | Forms that match this selector, or are inside it, are left alone. |
+| `takeover.allowFields` | `["lang"]` | Hidden input names a form may carry and still be taken over. |
+| `standDown` | `null` | The name of another live search on the page. When set, takeover is off. Placements still work. |
+
+The embed does nothing in a browser without constructable stylesheets (Safari before 16.4). Every form and link stays native there.
+
+### Placements
+
+A placement is a container the server prints and styles. The package draws no field. It adds behavior only, and both kinds work with no JavaScript.
+
+```html
+<!-- Inline: a real search field. Typing opens the dialog with the text. -->
+<div data-search-placement data-search-open="inline" data-search-index="main" data-search-placeholder="Search products">
+	<form role="search" method="get" action="/search">
+		<label for="product-q">Search</label>
+		<input id="product-q" type="search" name="q">
+		<button>Search</button>
+	</form>
+</div>
+
+<!-- Modal: a plain link. A click or tap opens the dialog. -->
+<div data-search-placement data-search-open="modal">
+	<a href="/search">Search</a>
+</div>
+```
+
+- The inline field's `name` must equal `takeover.inputName`. An inline placement has no results list of its own.
+- Do not put `data-search-trigger` on the modal link.
+- `data-search-index` and `data-search-placeholder` are optional, and are read at each open. Two placements on one index each show their own placeholder.
+- A modified click on the modal link (Cmd, Ctrl, Shift, Alt or the middle button) opens the results page as usual.
+- Escape returns focus to the field or link that opened the dialog.
+- Placements added after the page loads work too.
+
+### Theme takeover
+
+With `takeover.enabled`, the theme's own search form opens the dialog. A form is taken over only when all of these hold:
+
+- It is a GET form to the `results` URL (same origin and path), with no target other than `_self`.
+- It has exactly one control named `inputName`, a text or search input.
+- Its only other named controls are hidden inputs in `allowFields` and submit buttons with no `formaction`, `formmethod` or `formtarget`.
+- It is not inside `skip` and not inside a placement.
+
+Any other form is left alone, so product filters, POST forms and forms that go elsewhere keep working. A submit from a button with `formaction`, `formmethod` or `formtarget` submits natively.
+
+On submit, if the app or the index fails to load, or both are not ready within 4 seconds, the form submits natively with the text typed so far.
+
+### First tap on phones
+
+iOS opens the keyboard only for a field focused inside the tap itself. So every touch open shows a small field (the proxy) that looks like the dialog's box and focuses it at once. When the dialog is ready, and at least 150 ms later, the text and caret move to the real input. Style the proxy with the same `--search-*` custom properties as the dialog.
+
+### The results mount
+
+On the results page, print a mount with your own plain result list inside it:
+
+```html
+<div data-search-results data-search-index="main" data-search-query="lighthouse">
+	<ol>
+		<li><a href="/guides/lighthouse">Lighthouse guide</a></li>
+	</ol>
+</div>
+```
+
+- The boot loads the results chunk at once on a page with a mount. Once the index is loaded and the first render is built, the page draws in a shadow root and your list stops showing. If anything fails, your list stays.
+- `data-search-query` is the server's query, for pretty URLs such as `/search/lighthouse/`. It applies only to the page's first history entry.
+- `data-search-index` is optional. The URL's `${paramPrefix}index` comes first, then this attribute, then the config's `index`.
+- `data-search-types` is optional: a comma-separated list of the types the page shows.
+- The theme's global CSS for `ol`, `li`, `a` or `button` does not reach the results. Style them with `--search-*` and `::part()`. Font and color inherit from the page.
+- Each change replaces the history entry, and a submit adds one, so Back returns to the last submitted search.
+
+The same page is a module: `mountResultsPage(root, config)` from `@astronomic-dev/search/results` returns an unmount function. After an unmount, your list shows again.
+
+### URL names
+
+The results URL uses `queryParam` for the query, `${paramPrefix}type` for the type tab, `${paramPrefix}index` for the index and `${paramPrefix}<facet>` for each facet pick. "See all results" from a dialog always writes the index, so the results page searches the same one.
+
+These three names are reserved. A facet whose URL name equals the query, type or index name is not read from or written to the URL. A `queryParam` equal to the type or index name falls back to `"q"`. Use `paramPrefix` when the host already uses short names (such as `tag` or `paged`) for its own parameters.
+
 ## Content Security Policy
 
 The boot and app scripts are files in `/_search/`, never inline, and the dialog's styles are a constructable stylesheet in its shadow root. A policy of `script-src 'self'; style-src 'self'` works with no changes. The search's own checks run under exactly that policy. The `SearchPage` script is a small module that Vite may inline in the page when it is under `vite.build.assetsInlineLimit`; a strict policy needs it as a file, so do not raise that limit very high.

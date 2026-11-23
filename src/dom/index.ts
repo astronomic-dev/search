@@ -51,6 +51,11 @@ export interface MountOptions {
 	liveDelay?: number;
 	/** Called just before the dialog opens: with the trigger that opened it, or null for the shortcut. */
 	onOpen?: (trigger: HTMLElement | null) => void;
+	/**
+	 * The explicit opener (an embed's theme field, placement field or link) that focus returns to on close. Called on
+	 * an open that no trigger or shortcut set an opener for.
+	 */
+	takeOpener?: () => HTMLElement | null;
 	/** Dispatch the analytics events (search:query, search:select, search:noresults) on the dialog. Default true. */
 	events?: boolean;
 }
@@ -84,7 +89,7 @@ export function mountSearch(options: MountOptions): () => void {
 			show: options.show,
 			panel: options.dialogPanel,
 			returnFocus: () => {
-				const el = opener;
+				const el = opener ?? options.takeOpener?.() ?? null;
 				opener = null;
 				return el;
 			},

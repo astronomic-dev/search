@@ -5,6 +5,8 @@ export interface Strings {
 	close: string;
 	allTypes: string;
 	seeAll: string;
+	/** The notice in a dialog whose links open in a new tab. */
+	newTab: string;
 	loading: string;
 	unavailable: string;
 	retry: string;
@@ -29,6 +31,7 @@ export const defaultStrings: Strings = {
 	close: "Close",
 	allTypes: "All",
 	seeAll: "See all results",
+	newTab: "Links open in a new tab",
 	loading: "Loading…",
 	unavailable: "Search is not available right now.",
 	retry: "Try again",

@@ -6,7 +6,7 @@
  * and the components at the ".js" files too, then checks that no ".ts" specifier is left.
  */
 import { execFileSync } from "node:child_process";
-import { copyFileSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -24,15 +24,22 @@ execFileSync(process.execPath, [tsc, "-p", "tsconfig.build.json"], { cwd: pkg, s
 for (const name of readdirSync(join(pkg, "src/astro")).filter((f) => f.endsWith(".astro"))) {
 	writeFileSync(join(dist, "astro", name), toJs(readFileSync(join(pkg, "src/astro", name), "utf8")));
 }
+for (const name of readdirSync(join(pkg, "src/emdash/astro")).filter((f) => f.endsWith(".astro"))) {
+	mkdirSync(join(dist, "emdash/astro"), { recursive: true });
+	writeFileSync(join(dist, "emdash/astro", name), toJs(readFileSync(join(pkg, "src/emdash/astro", name), "utf8")));
+}
 copyFileSync(join(pkg, "src/astro/virtual.d.ts"), join(dist, "astro/virtual.d.ts"));
 // The same esbuild call the integration makes from src/; the entry names from the module tsc just wrote.
-const { compileEntry } = await import("./compile.mjs");
+const { compileAdmin, compileEntry } = await import("./compile.mjs");
 const { CONFIG_NAME, ENTRIES } = await import(new URL("../dist/astro/bundle.js", import.meta.url).href);
 for (const entry of ENTRIES) {
 	const code = await compileEntry(join(pkg, "src/browser", `${entry}.ts`));
 	if (!code.includes(CONFIG_NAME)) throw new Error(`build: dist/browser/${entry}.bundle.js does not read ${CONFIG_NAME}`);
 	writeFileSync(join(dist, "browser", `${entry}.bundle.js`), code);
 }
+// The admin page: esbuild, not tsc's JSX output (React, kumo, phosphor and emdash stay external).
+rmSync(join(dist, "emdash/admin/index.jsx"), { force: true });
+writeFileSync(join(dist, "emdash/admin/index.js"), await compileAdmin(join(pkg, "src/emdash/admin/index.tsx")));
 // The embed build: a boot and hashed chunks for pages with settings at run time (see build-embed.mjs).
 const { buildEmbed } = await import("./build-embed.mjs");
 await buildEmbed(join(dist, "embed"));

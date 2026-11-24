@@ -5,6 +5,9 @@
  * inherit by default, and every line, fill and mark is the text color or the accent mixed toward transparent, so it
  * reads on a light or a dark theme. The page cannot know the theme's background, so a selected pill is not the
  * dialog's inverted fill: it is the text color as its edge over a soft fill of it, the same on any background.
+ * There is no fixed color at all: the accent is the text color unless a site sets --search-accent, so the button is
+ * an outline in the text color (a fill only with --search-accent, its text --search-accent-fg or white or black to
+ * contrast), and it matches any theme.
  */
 export const css = /* css */ `
 :host {
@@ -17,28 +20,19 @@ export const css = /* css */ `
 	--_band: var(--search-band, color-mix(in srgb, var(--_fg) 4%, transparent));
 	--_soft: color-mix(in srgb, var(--_fg) 5%, transparent);
 	--_selected: var(--search-selected, color-mix(in srgb, var(--_fg) 12%, transparent));
-	--_accent: var(--search-accent, #2c5fd6);
-	--_accent-fg: var(--search-accent-fg, #ffffff);
-	--_mark-bg: var(--search-mark-bg, color-mix(in oklab, var(--_accent) 22%, transparent));
+	--_accent: var(--search-accent, var(--_fg));
+	--_mark-bg: var(--search-mark-bg, color-mix(in oklab, var(--_accent) 18%, transparent));
 	--_mark-fg: var(--search-mark-fg, inherit);
 	--_radius: var(--search-radius, 0.5rem);
 	/* The text color, so the ring reads on whatever background the host page has. */
 	--_focus: var(--search-focus, currentColor);
 	--_target: 2rem;
 	display: block;
+	/* Room under a heading right above it; it collapses into the heading's own margin, and any page style wins. */
+	margin-block-start: 1.5em;
 	font: inherit;
 	font-family: var(--_font);
 	color: var(--_fg);
-}
-@media (prefers-color-scheme: dark) {
-	:host(:not([theme="light"])) {
-		--_accent: var(--search-accent, #8fb0ff);
-		--_accent-fg: var(--search-accent-fg, #0d1117);
-	}
-}
-:host([theme="dark"]) {
-	--_accent: var(--search-accent, #8fb0ff);
-	--_accent-fg: var(--search-accent-fg, #0d1117);
 }
 @media (pointer: coarse) {
 	:host { --_target: 2.75rem; }
@@ -130,11 +124,16 @@ button:focus-visible, a:focus-visible {
 	height: 2.75rem;
 	padding: 0 1.125rem;
 	font-weight: 500;
-	color: var(--_accent-fg);
-	background: var(--_accent);
+	/*
+	 * An outline in the text color; a fill only when the site sets --search-accent. Its text: --search-accent-fg, else
+	 * white or black from the accent's lightness. With no accent the color is invalid, so it inherits the text color.
+	 */
+	color: var(--search-accent-fg, oklch(from var(--search-accent) clamp(0, (0.65 - l) * 999, 1) 0 0));
+	background: var(--search-accent, transparent);
+	border: 1px solid var(--search-accent, var(--_border));
 	border-radius: var(--_radius);
 }
-[part~="submit"]:hover { background: color-mix(in srgb, var(--_accent) 88%, var(--_fg)); }
+[part~="submit"]:hover { background: color-mix(in srgb, var(--search-accent, transparent) 88%, var(--_fg)); }
 
 /* Filter rows: a quiet label in a fixed start column, then the pills. */
 [part~="filter-row"] {

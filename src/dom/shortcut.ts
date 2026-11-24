@@ -166,6 +166,8 @@ export interface ShortcutOptions {
 	apple?: boolean;
 	/** Called just before the shortcut opens the dialog, with the element focus should return to on close. */
 	onOpen?: (returnTo: HTMLElement | null) => void;
+	/** Listen for the shortcut in the window's capture phase and stop a press it acts on, so it wins over the page's own listeners (the embed's takeover): stopImmediatePropagation, so even a window capture listener registered after this one never sees it. Default false. */
+	capture?: boolean;
 }
 
 /** One keydown listener on `win` that opens or toggles the search. `keys: []` binds nothing. */
@@ -178,6 +180,7 @@ export function bindShortcut(win: Window, keys: string[], controller: Controller
 		const action = shortcutAction(e, keys, apple, open);
 		if (!action) return;
 		e.preventDefault();
+		if (options.capture) e.stopImmediatePropagation();
 		if (!open) {
 			const active = activeElementOf(win.document) as HTMLElement | null;
 			const onPage = active && active !== win.document.body && active !== win.document.documentElement;
@@ -186,6 +189,7 @@ export function bindShortcut(win: Window, keys: string[], controller: Controller
 		if (action === "toggle") controller.toggle();
 		else controller.open();
 	};
-	win.addEventListener("keydown", onKey);
-	return () => win.removeEventListener("keydown", onKey);
+	const capture = !!options.capture;
+	win.addEventListener("keydown", onKey, capture);
+	return () => win.removeEventListener("keydown", onKey, capture);
 }

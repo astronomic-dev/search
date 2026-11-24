@@ -9,6 +9,10 @@ import { writeUrl, type UrlNames } from "../page/url.ts";
 import type { PageWords } from "../page/words.ts";
 import type { SeeAll } from "../ui/render.ts";
 
+/**
+ * What parseEmbedConfig reads, in the boot. The tag's `links` key is not here: only the app chunk reads it
+ * (embed/links.ts), so it costs the boot nothing.
+ */
 export interface EmbedConfig {
 	/** Absolute or root-relative URL of manifest.json. Required; without it the embed does nothing. */
 	manifest: string;

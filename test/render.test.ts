@@ -431,3 +431,48 @@ test("without seeAll, the See all href is unchanged; with it, the host builds it
 	assert.equal(seeAllLink({ results: "/", seeAll }, null, s, "blog", at), "/?s=dark mode&z_index=blog");
 	assert.deepEqual(calls, [["/", s, "blog"]]);
 });
+
+test("newTab: results, headings, suggested, See all and the error's links open a new tab with no opener", () => {
+	const on = ctx({ newTab: true });
+	const found = state({ result: grouped });
+	const suggested = state({ query: "", options: [{ id: "suggested:0", kind: "suggested", url: "/docs/start", label: "Start here" }] });
+	const error = state({ status: "error", query: "inst" });
+	const links = (c: RenderContext) => [
+		...wrap(renderResults(doc, found, c)).parts("option"),
+		...wrap(renderResults(doc, suggested, c)).parts("option"),
+		renderShell(doc, c).seeAll as unknown as El,
+		...(renderMessage(doc, error, c) as unknown as El).all((e) => e.tagName === "a"),
+	];
+	assert.equal(links(on).length, 7);
+	for (const a of links(on)) assert.deepEqual([a.tagName, a.getAttribute("target"), a.getAttribute("rel")], ["a", "_blank", "noopener"]);
+	for (const a of links(ctx())) assert.deepEqual([a.tagName, a.hasAttribute("target"), a.hasAttribute("rel"), a.hasAttribute("aria-describedby")], ["a", false, false, false]);
+	// An unsafe URL is still no link.
+	const item = { page: rec("x", { url: "javascript:alert(1)" }), score: 1, highlight: { title: [], snippet: { text: "", ranges: [] } }, headings: [] };
+	const unsafe = state({ result: result([{ key: "docs", label: "Docs", items: [item] }]) });
+	const [plain] = wrap(renderResults(doc, unsafe, on)).parts("option");
+	assert.deepEqual([plain!.tagName, plain!.hasAttribute("href"), plain!.hasAttribute("target")], ["div", false, false]);
+});
+
+test("newTab: one notice in the footer, outside the live region; the box, See all and the error's links point at it, options do not", () => {
+	const on = ctx({ newTab: true, strings: { ...defaultStrings, newTab: "Opens in a new tab" } });
+	const shell = renderShell(doc, on);
+	const dialog = shell.dialog as unknown as El;
+	const [notice, ...more] = dialog.parts("new-tab");
+	assert.equal(more.length, 0);
+	assert.equal(notice!.textContent, "Opens in a new tab");
+	assert.ok(dialog.parts("footer")[0]!.children.includes(notice!));
+	assert.equal((shell.live as unknown as El).parts("new-tab").length, 0);
+	const id = notice!.getAttribute("id")!;
+	assert.ok(id);
+	assert.equal(shell.input.getAttribute("aria-describedby"), id);
+	assert.equal(shell.seeAll.getAttribute("aria-describedby"), id);
+	const err = renderMessage(doc, state({ status: "error", query: "x" }), on) as unknown as El;
+	assert.deepEqual(err.all((e) => e.tagName === "a").map((a) => a.getAttribute("aria-describedby")), [id, id]);
+	const options = wrap(renderResults(doc, state({ query: "", options: [{ id: "suggested:0", kind: "suggested", url: "/a", label: "A" }] }), on)).parts("option");
+	assert.deepEqual(options.map((o) => o.hasAttribute("aria-describedby")), [false]);
+	// Without it: no extra element, and the box has no description.
+	const off = renderShell(doc, ctx());
+	assert.equal((off.dialog as unknown as El).parts("new-tab").length, 0);
+	assert.equal((off.dialog as unknown as El).parts("footer")[0]!.children.length, 2);
+	assert.equal(off.input.hasAttribute("aria-describedby"), false);
+});

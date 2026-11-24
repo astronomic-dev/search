@@ -12,11 +12,14 @@ import { runRecords, type RecordsSource } from "../adapters/records.ts";
 import type { StringsInput } from "../controller/strings.ts";
 import { mergeRecords } from "../core/merge.ts";
 import { DEFAULT_WEIGHTS } from "../core/minisearch.ts";
+import { applyType, checkClip, DEFAULT_BUDGET_KB, indexSettings, type IndexShape } from "../core/index-settings.ts";
 import { own } from "../core/own.ts";
 import { capKeywords, checkRecords } from "../core/schema.ts";
 import { foldText, squash } from "../core/text.ts";
 import { SCHEMA, type EngineFactory, type GroupBy, type IndexSettings, type Manifest, type SearchRecord, type SourcedRecord, type SuggestedLink, type Weights } from "../core/types.ts";
 import { cleanUrl, type UrlOptions } from "../core/url.ts";
+
+export { DEFAULT_BUDGET_KB, indexSettings, MIN_CLIP, type IndexShape } from "../core/index-settings.ts";
 
 export type Source = CollectionsSource | HtmlSource | RecordsSource;
 
@@ -58,7 +61,7 @@ export interface SearchOptions extends Partial<IndexInput> {
 	browse?: BrowseLink[];
 }
 
-export interface NormalIndex {
+export interface NormalIndex extends IndexShape {
 	name: string;
 	sources: Source[];
 	weights: Weights;
@@ -173,17 +176,6 @@ function checkSynonyms(where: string, input: unknown): string[][] {
 }
 
 /** Pinned results: each query folded and squashed as it is matched, each with a list of URLs. */
-/** The smallest `clip`: shorter text gives snippets with little to show. */
-export const MIN_CLIP = 200;
-
-/** The size warning of an index with no `budget`: past it, set `clip` or a budget of your own. */
-export const DEFAULT_BUDGET_KB = 300;
-
-function checkClip(where: string, input: unknown): number {
-	if (!Number.isInteger(input) || (input as number) < MIN_CLIP) throw new Error(`Search: ${where}: clip must be a whole number of characters, at least ${MIN_CLIP}, not ${JSON.stringify(input)}`);
-	return input as number;
-}
-
 function checkPinned(where: string, input: unknown): Record<string, string[]> {
 	if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error(`Search: ${where}: pinned must map a query to a list of URLs ({ "get started": ["/docs/install"] })`);
 	// No prototype: a query "__proto__" or "constructor" is an own key like any other.
@@ -304,11 +296,6 @@ function facetEntry(name: string, f: { label?: string; values?: Record<string, s
 	return { label: f?.label ?? capitalize(name), ...(f?.values ? { values: f.values } : {}) };
 }
 
-function applyType(t: { label: string; weight?: number }, o: { label?: string; weight?: number } | undefined) {
-	const weight = o?.weight ?? t.weight;
-	return { label: o?.label ?? t.label, ...(weight !== undefined ? { weight } : {}) };
-}
-
 function checkIndexName(name: string) {
 	if (RESERVED.has(name)) throw new Error(`Search: index name "${name}" is reserved (it is a built-in object key); pick another name`);
 	if (!NAME.test(name)) throw new Error(`Search: index name "${name}" must be letters, digits, "-" and "_"`);
@@ -342,15 +329,6 @@ export function normalizeSettings(input: SearchOptions): Settings {
 	const shortcut = input.shortcut === false ? false : (input.shortcut ?? DEFAULT_SHORTCUT);
 	if (shortcut && !Array.isArray(shortcut.keys)) throw new Error('Search: shortcut must be false or { keys: [...] }');
 	return { indexes, default: def, shortcut, strings: input.strings ?? {}, browse: checkBrowseShape(input.browse) };
-}
-
-/** The engine settings of one index. Types: the declared ones, plus any type a records() hook gave. */
-export function indexSettings(index: NormalIndex, records: readonly SearchRecord[]): IndexSettings {
-	// A Map: a record type named "constructor" or "__proto__" is a type like any other.
-	const types = new Map(Object.entries(index.types));
-	for (const r of records) if (!types.has(r.type)) types.set(r.type, applyType({ label: capitalize(r.type) }, own(index.typeOverrides, r.type)));
-	const sorted = Object.fromEntries([...types.keys()].sort().map((t) => [t, types.get(t) as { label: string; weight?: number }]));
-	return { weights: index.weights, group: index.group, groupOrder: index.groupOrder, types: sorted, facets: index.facets, ...(index.clip !== undefined ? { clip: index.clip } : {}) };
 }
 
 export const hash10 = (bytes: string | Uint8Array) => createHash("sha256").update(bytes).digest("hex").slice(0, 10);

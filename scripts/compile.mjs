@@ -34,3 +34,16 @@ export async function compileEntry(file) {
 	const out = await build({ entryPoints: [file], bundle: true, format: "esm", minify: true, target: "es2022", write: false, logLevel: "error", plugins: [minifyCss] });
 	return out.outputFiles[0]?.text ?? "";
 }
+
+/** What EmDash's admin provides: the admin bundle leaves these to the site's own copies. */
+export const ADMIN_EXTERNAL = ["react", "react/jsx-runtime", "react-dom", "@cloudflare/kumo", "@phosphor-icons/react", "emdash", "emdash/*"];
+
+/**
+ * Bundles the plugin's admin page (src/emdash/admin/index.tsx) to dist/emdash/admin/index.js: our own code only,
+ * minified, with React, kumo, phosphor and emdash external (plan decision 14).
+ * @param {string} file @returns {Promise<string>}
+ */
+export async function compileAdmin(file) {
+	const out = await build({ entryPoints: [file], bundle: true, format: "esm", minify: true, target: "es2022", jsx: "automatic", external: ADMIN_EXTERNAL, write: false, logLevel: "error" });
+	return out.outputFiles[0]?.text ?? "";
+}

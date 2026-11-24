@@ -359,9 +359,14 @@ test("the styles use --search-* tokens, inherit font and color, and have no bord
 	assert.match(css, /:host\s*\{[^}]*font:\s*inherit/);
 	assert.match(css, /:host\s*\{[^}]*color:\s*var\(--_fg\)/);
 	assert.match(css, /--_fg:\s*var\(--search-fg,\s*currentColor\)/);
-	// Light and dark.
-	assert.match(css, /prefers-color-scheme:\s*dark/);
-	assert.match(css, /:host\(\[theme="dark"\]\)/);
+	// No fixed color, so it reads on any theme, light or dark: the accent is the text color unless a site sets one,
+	// and the button is an outline in it (a fill only with --search-accent).
+	assert.doesNotMatch(css, /#[0-9a-f]{3,8}\b/i);
+	assert.match(css, /--_accent:\s*var\(--search-accent,\s*var\(--_fg\)\)/);
+	assert.match(css, /\[part~="submit"\]\s*\{[^}]*background:\s*var\(--search-accent,\s*transparent\)/);
+	// Its text: --search-accent-fg, else white or black from the accent's lightness. With no accent the fallback has no
+	// value, so the color inherits the page's text color (a dark accent never gets the page's dark text).
+	assert.match(css, /\[part~="submit"\]\s*\{[^}]*color:\s*var\(--search-accent-fg,\s*oklch\(from var\(--search-accent\) clamp\(0, \(0\.65 - l\) \* 999, 1\) 0 0\)\)/);
 	assert.doesNotMatch(css, /border-left|border-inline-start|border-right|border-inline-end/);
 });
 

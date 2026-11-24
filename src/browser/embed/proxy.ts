@@ -9,15 +9,15 @@
  */
 const CSS = /* css */ `
 :host {
-	--_font: var(--search-font, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif);
-	--_width: var(--search-width, 40rem);
-	--_bg: var(--search-bg, #ffffff);
-	--_fg: var(--search-fg, #16181d);
-	--_muted: var(--search-muted, #5c6370);
-	--_border: var(--search-border, #dfe2e7);
-	--_radius: var(--search-radius, 0.75rem);
-	--_shadow: var(--search-shadow, 0 1.5rem 4rem -1rem rgb(15 20 30 / 0.35), 0 0 0 1px rgb(15 20 30 / 0.06));
-	--_backdrop: var(--search-backdrop, rgb(15 20 30 / 0.45));
+	--_font:var(--search-font,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif);
+	--_width:var(--search-width,40rem);
+	--_bg:var(--search-bg,#fff);
+	--_fg:var(--search-fg,#16181d);
+	--_muted:var(--search-muted,#5c6370);
+	--_border:var(--search-border,#dfe2e7);
+	--_radius:var(--search-radius,0.75rem);
+	--_shadow:var(--search-shadow,0 1.5rem 4rem -1rem rgb(15 20 30/0.35),0 0 0 1px rgb(15 20 30/0.06));
+	--_backdrop:var(--search-backdrop,rgb(15 20 30/0.45));
 	position: fixed;
 	inset: 0;
 	z-index: 2147483647;
@@ -25,27 +25,27 @@ const CSS = /* css */ `
 	color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
-	:host(:not([theme="light"])) {
-		--_bg: var(--search-bg, #17191e);
-		--_fg: var(--search-fg, #eceef2);
-		--_muted: var(--search-muted, #a3a9b5);
-		--_border: var(--search-border, #31353d);
-		--_shadow: var(--search-shadow, 0 1.5rem 4rem -1rem rgb(0 0 0 / 0.7), 0 0 0 1px rgb(255 255 255 / 0.08));
-		--_backdrop: var(--search-backdrop, rgb(0 0 0 / 0.6));
+	:host(:not([theme=light])) {
+		--_bg:var(--search-bg,#17191e);
+		--_fg:var(--search-fg,#eceef2);
+		--_muted:var(--search-muted,#a3a9b5);
+		--_border:var(--search-border,#31353d);
+		--_shadow:var(--search-shadow,0 1.5rem 4rem -1rem rgb(0 0 0/0.7),0 0 0 1px rgb(255 255 255/0.08));
+		--_backdrop:var(--search-backdrop,rgb(0 0 0/0.6));
 		color-scheme: dark;
 	}
 }
-:host([theme="dark"]) {
-	--_bg: var(--search-bg, #17191e);
-	--_fg: var(--search-fg, #eceef2);
-	--_muted: var(--search-muted, #a3a9b5);
-	--_border: var(--search-border, #31353d);
-	--_shadow: var(--search-shadow, 0 1.5rem 4rem -1rem rgb(0 0 0 / 0.7), 0 0 0 1px rgb(255 255 255 / 0.08));
-	--_backdrop: var(--search-backdrop, rgb(0 0 0 / 0.6));
+:host([theme=dark]) {
+	--_bg:var(--search-bg,#17191e);
+	--_fg:var(--search-fg,#eceef2);
+	--_muted:var(--search-muted,#a3a9b5);
+	--_border:var(--search-border,#31353d);
+	--_shadow:var(--search-shadow,0 1.5rem 4rem -1rem rgb(0 0 0/0.7),0 0 0 1px rgb(255 255 255/0.08));
+	--_backdrop:var(--search-backdrop,rgb(0 0 0/0.6));
 	color-scheme: dark;
 }
 * { box-sizing: border-box; }
-[part="panel"] {
+div {
 	font: 0.9375rem/1.45 var(--_font);
 	color: var(--_fg);
 	background: var(--_bg);
@@ -72,7 +72,7 @@ input {
 }
 input::placeholder { color: var(--_muted); opacity: 1; }
 @media (max-width: 40rem) {
-	[part="panel"] { margin: 0; width: 100%; border-radius: 0; box-shadow: none; }
+	div { margin: 0; width: 100%; border-radius: 0; box-shadow: none; }
 	:host { background: var(--_bg); }
 }
 `;
@@ -105,7 +105,6 @@ export function showProxy(doc: Document, text: string, parent?: Element | null, 
 	panel.setAttribute("part", "panel");
 	const input = doc.createElement("input");
 	for (const [k, v] of Object.entries({
-		type: "text",
 		placeholder: text,
 		"aria-label": text,
 		spellcheck: "false",

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { activeElementOf, ariaKeyshortcuts, isApple, isEditable, matchKey, shortcutAction, type KeyEventLike } from "../src/dom/shortcut.ts";
+import { activeElementOf, ariaKeyshortcuts, bindShortcut, isApple, isEditable, matchKey, shortcutAction, type KeyEventLike } from "../src/dom/shortcut.ts";
 
 const body = { tagName: "BODY" };
 const textInput = { tagName: "INPUT", type: "text" };
@@ -150,4 +150,54 @@ test("aria-keyshortcuts text and platform", () => {
 	assert.equal(isApple({ userAgentData: { platform: "macOS" } }), true);
 	assert.equal(isApple({ platform: "Win32" }), false);
 	assert.equal(isApple({ platform: "Linux x86_64" }), false);
+});
+
+/** A fake window that records each keydown listener and whether it listens in the capture phase. */
+function fakeWindow() {
+	const listeners: { fn: (e: KeyboardEvent) => void; capture: boolean }[] = [];
+	const win = {
+		document: { activeElement: body, body, documentElement: {} },
+		addEventListener: (_t: string, fn: (e: KeyboardEvent) => void, capture?: boolean) => listeners.push({ fn, capture: !!capture }),
+		removeEventListener: (_t: string, fn: (e: KeyboardEvent) => void, capture?: boolean) => {
+			const i = listeners.findIndex((l) => l.fn === fn && l.capture === !!capture);
+			if (i >= 0) listeners.splice(i, 1);
+		},
+	};
+	return { win: win as unknown as Window, listeners };
+}
+
+function press(k: string, extra: Partial<KeyEventLike> = {}) {
+	const e = { ...key(k, extra), defaultPrevented: false, stopped: false, preventDefault: () => (e.defaultPrevented = true), stopImmediatePropagation: () => (e.stopped = true) };
+	return e;
+}
+
+test("bindShortcut capture: listens in the capture phase and stops only a press it acts on (takeover)", () => {
+	const { win, listeners } = fakeWindow();
+	let toggles = 0;
+	const controller = { getState: () => ({ open: false }), toggle: () => toggles++, open: () => {} } as never;
+	const unbind = bindShortcut(win, keys, controller, { apple: true, capture: true });
+	assert.equal(listeners.length, 1);
+	assert.equal(listeners[0]!.capture, true);
+	const cmdK = press("k", { metaKey: true });
+	listeners[0]!.fn(cmdK as never);
+	assert.equal(toggles, 1);
+	assert.equal(cmdK.defaultPrevented && cmdK.stopped, true);
+	// A key it does not act on (a bare k, or / in a text field) goes on to the page's listeners.
+	for (const e of [press("k"), press("/", { target: textInput })]) {
+		listeners[0]!.fn(e as never);
+		assert.equal(e.stopped || e.defaultPrevented, false);
+	}
+	unbind();
+	assert.equal(listeners.length, 0);
+});
+
+test("bindShortcut without capture: a bubble listener that never stops the press", () => {
+	const { win, listeners } = fakeWindow();
+	const controller = { getState: () => ({ open: false }), toggle: () => {}, open: () => {} } as never;
+	bindShortcut(win, keys, controller, { apple: true });
+	assert.equal(listeners[0]!.capture, false);
+	const cmdK = press("k", { metaKey: true });
+	listeners[0]!.fn(cmdK as never);
+	assert.equal(cmdK.defaultPrevented, true);
+	assert.equal(cmdK.stopped, false);
 });

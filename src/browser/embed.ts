@@ -25,7 +25,7 @@
 import { readConfigTag, type EmbedConfig } from "./config.ts";
 import type { EmbedApp } from "./embed-app.ts";
 import { createOpen } from "./embed/session.ts";
-import { bindInput } from "./embed/input.ts";
+import { bindInput, type Hit } from "./embed/input.ts";
 import { placementHit, PLACEMENT } from "./embed/placements.ts";
 import { RESULTS, startTakeover } from "./embed/takeover.ts";
 import { prefetch, type Prefetch } from "../controller/prefetch.ts";
@@ -55,9 +55,16 @@ function startEmbed(config: EmbedConfig): void {
 	let failed = false;
 	/** Failed loads so far; a load after one asks for a fresh URL (see load). */
 	let tries = 0;
-	/** A held shortcut press, so a second press while loading does not toggle twice. */
+	/** A press is held, so a second one while loading does not toggle twice. Its load makes `ready` or `failed` true. */
 	let held = false;
 	const takeover = startTakeover(doc, config);
+	/**
+	 * With takeover on, the shortcut wins over the theme's own (a theme script that takes Cmd+K for its header box): it
+	 * listens in the window's capture phase and stops a press it acts on, here and in the app (its `capture`): every
+	 * listener after it never sees the press, even another capture listener on the window (one registered there before
+	 * it, or before the app's own listener, still runs first).
+	 */
+	const capture = !!takeover;
 	const lang = config.lang ?? doc.documentElement.lang;
 	const earlyFor = (index: string) => prefetch({ index, lang, manifestUrl: config.manifest, fetch });
 
@@ -75,8 +82,7 @@ function startEmbed(config: EmbedConfig): void {
 			(m) => {
 				const app = m.createEmbedApp(config);
 				app.usePrefetch(early!);
-				// The default dialog's own shortcut binder takes over.
-				win.removeEventListener("keydown", onShortcut);
+				// The default dialog's own shortcut binder takes over (see onShortcut).
 				return (ready = app);
 			},
 			(e: unknown) => {
@@ -90,60 +96,54 @@ function startEmbed(config: EmbedConfig): void {
 		return loading;
 	}
 
-	/** Turns the embed off for the page (see `failed`). */
+	/** Turns the embed off for the page (see `failed`); every taken field in it goes back to the theme. */
 	function off(): void {
 		failed = true;
-		win.removeEventListener("keydown", onShortcut);
+		takeover?.off();
 	}
 
-	/** A placement, or a theme search form takeover takes. */
-	function warmTarget(target: EventTarget | null): Element | null {
-		if (failed || !(target instanceof Element)) return null;
+	/**
+	 * What `t` is to the embed. Placements win: a target inside one is never takeover's. `warms`: what warms it instead,
+	 * the whole placement, or anywhere in a theme search form takeover takes.
+	 */
+	function resolve(t: EventTarget | null, warms?: boolean): Hit | true {
+		// Off, a field that was out of the page then (a cached header) may still be taken: it goes back at its first use.
+		if (failed) takeover?.release(t as HTMLInputElement);
+		if (failed || !(t instanceof Element)) return null;
 		// Through the prototype: a form's control named "closest" shadows the method on the form itself.
-		const form = Element.prototype.closest.call(target, "form") as HTMLFormElement | null;
-		return Element.prototype.closest.call(target, PLACEMENT) ?? (form && takeover?.takes(form) ? form : null);
+		const up = (sel: string) => Element.prototype.closest.call(t, sel);
+		const p = up(PLACEMENT);
+		return p ? warms || placementHit(t, p, config.takeover.inputName) : (takeover?.hit((warms && up("form")) || t) ?? null);
 	}
 
+	/** A cold press (once the app is in, its own binder has the keys; once the embed is off, the browser has). */
 	function onShortcut(e: KeyboardEvent): void {
-		if (e.defaultPrevented || !shortcutAction(e, config.keys, isApple(navigator), false)) return;
+		if (ready || failed || e.defaultPrevented || !shortcutAction(e, config.keys, isApple(navigator), false)) return;
 		e.preventDefault();
+		if (capture) e.stopImmediatePropagation();
 		if (held) return;
 		held = true;
 		// Replay where the press happened: inside a shadow root, the element there, not its host.
 		const origin = e.composedPath()[0] ?? e.target;
-		// The press's key and modifiers; it bubbles to the app's window listener even when the press itself did not.
-		const init: KeyboardEventInit = { key: e.key, code: e.code, metaKey: e.metaKey, ctrlKey: e.ctrlKey, altKey: e.altKey, shiftKey: e.shiftKey, bubbles: true, cancelable: true, composed: true };
 		load().then(
 			() => {
 				// Focus moved into a text field while the app loaded: the press is dropped, as the shortcut would not open there.
 				if (isEditable(activeElementOf(doc))) return;
-				(origin instanceof Node && origin.isConnected ? origin : doc.body).dispatchEvent(new KeyboardEvent("keydown", init));
+				(origin instanceof Node && origin.isConnected ? origin : win).dispatchEvent(new KeyboardEvent("keydown", e));
 			},
 			off,
 		);
-		loading?.finally(() => (held = false)).catch(() => {});
 	}
 
 	const warm = (e: Event) => {
-		if (warmTarget(e.target)) load().catch(() => {});
+		if (resolve(e.target, true)) load().catch(() => {});
 	};
 	doc.addEventListener("pointerover", warm);
 	doc.addEventListener("focusin", warm);
-	if (config.keys.length) win.addEventListener("keydown", onShortcut);
+	if (config.keys.length) win.addEventListener("keydown", onShortcut, capture);
 
-	const open = createOpen(doc, { load, ready: () => ready }, config.strings.placeholder || "Search", off, config.theme);
-	const name = config.takeover.inputName;
-	bindInput(
-		doc,
-		(t) => {
-			if (failed || !(t instanceof Element)) return null;
-			// Placements win: a target inside one is never takeover's.
-			const p = Element.prototype.closest.call(t, PLACEMENT);
-			return p ? placementHit(t, p, name) : (takeover?.hit(t) ?? null);
-		},
-		open,
-		takeover?.submit,
-	);
+	const open = createOpen(doc, { load, ready: () => ready }, config.strings.placeholder || "Search", off, config.theme, takeover?.release);
+	bindInput(doc, resolve as (t: EventTarget | null) => Hit, open, takeover?.submit);
 
 	const results = doc.querySelector<HTMLElement>(RESULTS);
 	if (results) {

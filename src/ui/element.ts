@@ -22,11 +22,15 @@ export interface ElementConfig {
 	/** Loads one index for this page's language. */
 	load: (index: string) => Promise<Searcher>;
 	strings?: StringsInput;
+	/** Listen for the shortcut in the window's capture phase and stop a press it acts on, so it wins over the page's own listeners (the embed's takeover). Default false. */
+	capture?: boolean;
 	browse?: BrowseLink[];
 	/** The results page, for "See all results" when no trigger gives an href. Default "/search". */
 	results?: string;
 	/** Builds the "See all results" href from the base, the box's query, type and picks, and the index. */
 	seeAll?: SeeAll;
+	/** Open every result and link of the dialog in a new tab; the dialog stays open. Default false. */
+	newTab?: boolean;
 }
 
 export const TAG = "astronomic-search";
@@ -141,6 +145,8 @@ export class SearchElement extends HTMLElement {
 			controller: this.#controller!,
 			idFor: this.#idFor(),
 			keys: this.keys,
+			capture: cfg.capture,
+			newTab: cfg.newTab,
 			takeOpener: () => {
 				const o = this.opener;
 				this.opener = null;
@@ -231,6 +237,7 @@ export class SearchElement extends HTMLElement {
 			typeLabel: (t) => own(settings?.types, t)?.label ?? t,
 			facetLabel: (f) => own(settings?.facets, f)?.label ?? f,
 			browse: cfg.browse ?? [],
+			newTab: cfg.newTab,
 		};
 	}
 

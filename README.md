@@ -4,6 +4,8 @@
 
 See it live and read the guide at [astronomic.dev/plugins/search](https://astronomic.dev/plugins/search).
 
+Full docs, for Astro and EmDash: [astronomic.dev/docs/search](https://astronomic.dev/docs/search).
+
 Fuzzy search in a dialog for any Astro site. It indexes your pages and their headings at build time, ships the index as a hashed file, and loads it only when a visitor reaches for search: on hover, focus, a click or the shortcut. Typos still find the page ("nortwind" finds "Northwind rebrand"), and a match inside a section links straight to its heading. Only real matches are marked: a word that a query word equals or starts ("lodes" marks "Lodestar"). A word found only by a typo match shows its result with no mark, so "code" never marks "come" and "button" never marks "bottom" (nor "lodestr" "Lodestar").
 
 - **Records first.** Everything becomes the same small record (a page, a heading's section, or an action), whatever it came from: content collections, built HTML, or your own code.
@@ -77,7 +79,7 @@ import SearchPage from "@astronomic-dev/search/astro/SearchPage.astro";
 </html>
 ```
 
-It searches the default index and ignores the `type` and filter parameters a trigger may add. For another index or other markup, write the page yourself: start from `dist/astro/SearchPage.astro` in the package, with its relative imports changed to `@astronomic-dev/search/controller` and `@astronomic-dev/search/core`, and put another index name in place of `assets.index`. If your search page lives somewhere else, set `href` on `SearchLink` (see The dialog element).
+It searches the default index and ignores the `type` and filter parameters a trigger may add. It shows one list by score (so `group.page` has no effect here), lists the first 50 matches while its status line counts them all, and fires no analytics events (on plain Astro only the dialog does). For another index or other markup, write the page yourself: start from `dist/astro/SearchPage.astro` in the package, change its relative imports to the package's own (`@astronomic-dev/search/astro/SearchNoscript.astro`, `@astronomic-dev/search/controller` and `@astronomic-dev/search/core`; keep `virtual:astronomic-search/assets`), and put another index name in place of `assets.index`. If your search page lives somewhere else, set `href` on `SearchLink` (see The dialog element).
 
 ## Settings
 
@@ -90,7 +92,7 @@ search({
 	sources: [collections({ docs: { label: "Docs", facets: ["theme"] } }), html({ include: ["/", "/pricing"] })],
 	weights: { title: 3, heading: 2, text: 1, keywords: 1 },
 	group: { dialog: "type" },
-	types: { themes: { weight: 1.5 } },
+	types: { docs: { weight: 1.5 } },
 	shortcut: { keys: ["mod+k", "/"] },
 	browse: [{ label: "Docs", href: "/docs" }],
 });
@@ -112,7 +114,7 @@ search({
 | --- | --- | --- |
 | `sources` | index | Where the records come from (see Adapters). Required. |
 | `weights` | index | Field boosts: `title`, `heading`, `text`, `keywords` (a page's keywords and its facet values). Default 3, 2, 1, 1. |
-| `group` | index | `{ dialog, page }`: `"type"`, a facet name, or `false` (one list by score). Default: by type in the dialog, mixed on a page. |
+| `group` | index | `{ dialog, page }`: `"type"`, a facet name, or `false` (one list by score). Default: by type in the dialog, mixed on a page. The plain Astro `SearchPage` ignores `page`. |
 | `groupOrder` | index | `"best"` (the group with the best match first) or a fixed list of group keys. |
 | `types` | index | Per type: a `label` and a score `weight` (default 1). |
 | `facets` | index | Per facet: a `label` and labels for its `values`. No source or index may name a facet `type` (the content type) or `q` (the search page reads `?q=` as the query); the build fails on one. |
@@ -167,7 +169,7 @@ Only page records take keywords, not headings. Each keyword is trimmed and empty
 | Layer | Import | Use it when |
 | --- | --- | --- |
 | Default dialog | `@astronomic-dev/search/ui` (loaded for you by `SearchLink`) | You want search working today and will theme it with custom properties and parts. |
-| Browser behavior | `@astronomic-dev/search/dom` | You render your own markup and want the dialog, combobox, tabs, shortcut and live region done right. `mountSearch({ trigger, dialog, input, listbox, live, controller, idFor, keys })` returns an `unbind()`. |
+| Browser behavior | `@astronomic-dev/search/dom` | You render your own markup and want the dialog, combobox, tabs, shortcut and live region done right. `mountSearch({ trigger, dialog, input, listbox, live, controller, idFor, keys })` returns an `unbind()`. With `newTab: true`, every result opens in a new tab and the dialog stays open; put `target="_blank" rel="noopener"` on your own result links, and the browser follows a click on one itself, so a pop-up blocker never stops it. |
 | Controller | `@astronomic-dev/search/controller` | You want only the state: query, loading, results, the active option, type tabs, facet picks and recent searches. No DOM, so it runs anywhere. In an empty dialog box, `state.options` holds the index's suggested links (`kind: "suggested"`, with `url`, `label` and `type`), so a recipe renders them as options. |
 
 The core (`@astronomic-dev/search/core`) holds the record types, the engine and `createSearch`, for code that searches an index without any UI. The dom layer also exports `marked(document, text, ranges, attrs?)`, the one way to render result text: text nodes with a `<mark>` (with `attrs`, default `part="mark"`) around each matched range, never markup.
@@ -260,6 +262,7 @@ Style any piece with `astronomic-search::part(name)`. These names are stable.
 | `tab` | One type tab |
 | `facets` | The filter row |
 | `facet` | One filter button |
+| `filters-toggle` | On narrow screens, the button beside the type tabs that shows or hides the filter row, with the picked count |
 | `results` | The results list |
 | `group` | One group of results |
 | `group-label` | A group's heading: its name, then the group's count (`group-count`) on the right |
@@ -276,6 +279,7 @@ Style any piece with `astronomic-search::part(name)`. These names are stable.
 | `suggested` | The suggested links in an empty box: also a `group`, with a `group-label` and `option` links |
 | `footer` | The bottom row |
 | `see-all` | The "See all results" link |
+| `new-tab` | The notice that links open in a new tab, in a dialog whose links do |
 | `kbd` | A key in the footer hints |
 | `status` | The live region (visually hidden) |
 
@@ -290,6 +294,7 @@ Every label has a US English default. Replace any of them with the `strings` set
 | `close` | Close |
 | `allTypes` | All |
 | `seeAll` | See all results |
+| `newTab` | Links open in a new tab (the dialog's notice, when its links do) |
 | `loading` | Loading… |
 | `unavailable` | Search is not available right now. |
 | `retry` | Try again |
@@ -303,6 +308,20 @@ Every label has a US English default. Replace any of them with the `strings` set
 | `other` | Other |
 | `results` | `{ zero: "No results", one: "1 result", other: "{count} results" }` |
 | `keys` | `{ move: "to move", open: "to open", close: "to close" }` |
+
+The results page (the embed's [results mount](#the-results-mount) and EmDash's `<SearchResults>`) takes the same `strings`, plus its own words:
+
+| Key | Default |
+| --- | --- |
+| `label` | Search (the box's label, visually hidden) |
+| `submit` | Search (the form's button) |
+| `showMore` | Show more results |
+| `moreShown` | Result {position} of {total}: {title} (read after "Show more results") |
+| `headingMark` | # (before a section result's heading, hidden from screen readers) |
+| `crumbMark` | › (between the parts of a breadcrumb, hidden from screen readers) |
+| `typeText` | Type (the visible label before the type tabs) |
+
+On EmDash, the admin page sets only `placeholder` (Search box text); every other string keeps its default.
 
 ## Keyboard
 
@@ -325,7 +344,7 @@ The search sends nothing anywhere. It dispatches three DOM events, which bubble 
 | `search:noresults` | Right after `search:query`, when that query found nothing. | `{ query, index }` |
 | `search:select` | When a result or a suggested link is opened: Enter, a click, or a new tab. | `{ query, index, id, url, type, position }`: `position` starts at 1, in screen order. A suggested link has `id: null` and `query: ""`. |
 
-Nothing fires for an empty box or while an input method is still composing text. `mountSearch({ events: false })` turns them off.
+Nothing fires for an empty box or while an input method is still composing text. `mountSearch({ events: false })` turns them off. The embed's results page (and EmDash's `<SearchResults>`) fires the same three events from its mount, so one set of listeners covers the dialog and the page. The plain Astro `SearchPage` fires none. More examples: [astronomic.dev/docs/search/analytics](https://astronomic.dev/docs/search/analytics).
 
 Plausible:
 
@@ -410,13 +429,14 @@ Escape `<`, `>` and `&` in the JSON so it cannot close the tag. Only `manifest` 
 | `paramPrefix` | `""` | Goes before the type, index and facet parameters. Letters, digits, `_` and `-` only. |
 | `keys` | `[]` | Shortcut keys, such as `["mod+k", "/"]`. They open the default index's dialog. |
 | `strings` | `{}` | Dialog and results page text (see [Strings](#strings)). |
-| `browse` | `[]` | Links shown in an empty dialog. A link whose `href` is not relative or http(s) is dropped. |
+| `browse` | `[]` | Links shown when the index cannot load, under the retry button. A link whose `href` is not relative or http(s) is dropped. With a working index, an empty dialog shows suggested links and recent searches instead; set those links with the index's `suggested` setting where the index is built. |
 | `takeover.enabled` | `false` | Take over the theme's own search form. |
 | `takeover.inputName` | `"q"` | The name of the theme form's search input. Letters, digits, `_`, `-` and `[]` only. |
 | `takeover.skip` | `".no-search-takeover"` | Forms that match this selector, or are inside it, are left alone. |
 | `takeover.allowFields` | `["lang"]` | Hidden input names a form may carry and still be taken over. |
 | `standDown` | `null` | The name of another live search on the page. When set, takeover is off. Placements still work. |
-| `theme` | none | `"light"` or `"dark"`. The dialogs, the takeover's stand-in box and the results page use it whatever the device's color scheme. Left out (or any other value), they follow the device. |
+| `theme` | none | `"light"` or `"dark"`. The dialogs and the takeover's stand-in box use it whatever the device's color scheme. Left out (or any other value), they follow the device. The results page has no colors of its own, so it always follows the page. |
+| `links` | none | `"new-tab"`: every link in the dialog opens in a new tab, and the dialog stays open. Left out (or any other value), a result opens in the same tab. See [Links in a new tab](#links-in-a-new-tab). |
 
 The embed does nothing in a browser without constructable stylesheets (Safari before 16.4). Every form and link stays native there.
 
@@ -447,6 +467,10 @@ A placement is a container the server prints and styles. The package draws no fi
 - Escape returns focus to the field or link that opened the dialog.
 - Placements added after the page loads work too.
 
+### Links in a new tab
+
+For a page people should not leave, such as an admin screen with a "try a search" box, set `"links": "new-tab"`. Leave it out on pages for visitors. Results, suggested links, "See all results" and the error state's links then open in a new tab, and the dialog stays open with its query. The dialog's footer says so (the `newTab` string). Theme takeover's form submit and the results page are not affected. Keep the config tag on the page until search first loads: the key is read then, and with no tag left the links open in the same tab.
+
 ### Theme takeover
 
 With `takeover.enabled`, the theme's own search form opens the dialog. A form is taken over only when all of these hold:
@@ -456,9 +480,17 @@ With `takeover.enabled`, the theme's own search form opens the dialog. A form is
 - Its only other named controls are hidden inputs in `allowFields` and submit buttons with no `formaction`, `formmethod` or `formtarget`.
 - It is not inside `skip` and not inside a placement.
 
+A taken field is read-only, with `aria-haspopup="dialog"`, while the embed owns it. Both go back to what they were when it is given back (search cannot load, its index is not there, or its form no longer qualifies); a field that was read-only of its own is read-only again. It still takes focus: a printable key, a paste, a click, Enter or an IME's key opens the dialog, and the text goes into the dialog's box. Closing the dialog puts focus back on the field. Tab, Escape and the arrow keys do not open it. Known limit: Firefox does not start an input method (Chinese, Japanese, Korean) in a read-only field, so after the dialog closes, click the field or press Enter, and compose in the dialog.
+
 Any other form is left alone, so product filters, POST forms and forms that go elsewhere keep working. A submit from a button with `formaction`, `formmethod` or `formtarget` submits natively.
 
-On submit, if the app or the index fails to load, or both are not ready within 4 seconds, the form submits natively with the text typed so far.
+On submit, if the app or the index fails to load, or both are not ready within 4 seconds, the form submits natively with the text typed so far. If the index fails to load after the theme's field (or the `LiveSearch` box) opened the dialog, for example before the first build, the dialog closes and the text typed so far goes back into the field, which stays the theme's for the rest of the page.
+
+EmDash's `LiveSearch` box (`emdash/ui/search`, in EmDash's blog template) has no form. With takeover on, its field opens the dialog too, unless it is inside `skip`, and its own results dropdown stays shut. Other inputs with no form stay native.
+
+When `strings.placeholder` is set, the embed also writes it onto the field of each form it takes over, and onto a taken `LiveSearch` box, so the theme's box shows the same text as the dialog. With takeover off, the theme's fields are never touched.
+
+With takeover on, the shortcut keys win over the theme's own (a theme script that binds Cmd+K to its header box, as EmDash's blog template does): a press that opens or closes search never reaches the theme's listeners. Other keys, and every key with takeover off, stay the theme's. The embed listens in the window's capture phase and stops the press there, so a theme listener in that same phase added after it never sees the press. One added earlier still runs first: before the embed's script ran, or before search first loads (the first open, hover or focus), when the embed adds its listener again.
 
 ### First tap on phones
 
@@ -481,6 +513,9 @@ On the results page, print a mount with your own plain result list inside it:
 - `data-search-index` is optional. The URL's `${paramPrefix}index` comes first, then this attribute, then the config's `index`.
 - `data-search-types` is optional: a comma-separated list of the types the page shows.
 - The theme's global CSS for `ol`, `li`, `a` or `button` does not reach the results. Style them with `--search-*` and `::part()`. Font and color inherit from the page.
+- The results page has no colors of its own, so it matches the theme. Lines, fills, matched words and the Search button come from the page's text color, and the button is an outline. To fill the button with your brand color, set `--search-accent` on the mount or an ancestor. Its text is white or black to contrast with the accent; set `--search-accent-fg` to choose it.
+- It reads the dialog's `--search-font`, `--search-fg`, `--search-muted`, `--search-border`, `--search-line`, `--search-mark-bg`, `--search-mark-fg`, `--search-radius` and `--search-focus`, each defaulting to the page's text color mixed lighter, plus three of its own: `--search-rule` (the lines between results, text color at 9%), `--search-band` (the band behind each group's heading, 4%) and `--search-selected` (a picked tab or filter, 12%). See [astronomic.dev/docs/search/customize](https://astronomic.dev/docs/search/customize).
+- The results page draws its own search field. Replace the body of the theme's search page with the mount, and keep the mount inside the theme's container. If you keep the theme's own field outside the mount, the page shows two search fields. Put the theme's form and list inside the mount instead: they show when the script does not run.
 - Each change replaces the history entry, and a submit adds one, so Back returns to the last submitted search.
 
 The same page is a module: `mountResultsPage(root, config)` from `@astronomic-dev/search/results` returns an unmount function. After an unmount, your list shows again.
@@ -490,6 +525,185 @@ The same page is a module: `mountResultsPage(root, config)` from `@astronomic-de
 The results URL uses `queryParam` for the query, `${paramPrefix}type` for the type tab, `${paramPrefix}index` for the index and `${paramPrefix}<facet>` for each facet pick. "See all results" from a dialog always writes the index, so the results page searches the same one.
 
 These three names are reserved. A facet whose URL name equals the query, type or index name is not read from or written to the URL. A `queryParam` equal to the type or index name falls back to `"q"`. Use `paramPrefix` when the host already uses short names (such as `tag` or `paged`) for its own parameters.
+
+## EmDash
+
+A free EmDash plugin ships in the same package. It builds the index from your EmDash content, keeps it fresh when you publish, serves it as JSON and prints the [embed](#embed-on-any-server) on every public page. It adds one admin page, **Search**, with the index status, a Rebuild now button and the settings. Tested on EmDash 1.4.0 and 1.6.0, including EmDash's default blog template (`create-emdash`).
+
+It is a native (trusted) plugin, installed from npm. It is not in EmDash's plugin registry, which lists sandboxed plugins only.
+
+### Install
+
+```sh
+pnpm add @astronomic-dev/search
+```
+
+```js
+// astro.config.mjs
+import { defineConfig } from "astro/config";
+import emdash from "emdash/astro";
+import { search } from "@astronomic-dev/search/emdash";
+import { searchFiles } from "@astronomic-dev/search/emdash/astro";
+
+export default defineConfig({
+	integrations: [
+		emdash({
+			// your existing EmDash options (database, storage, ...)
+			plugins: [search()],
+		}),
+		searchFiles(),
+	],
+});
+```
+
+In an existing config, keep your EmDash options, add `search()` to its `plugins` list, and add `searchFiles()` to `integrations`.
+
+`searchFiles()` goes after `emdash()`. It copies the embed's files into your build at `/_search/embed/` and serves them in `astro dev`. Your site serves every file itself; nothing loads from us.
+
+Options (in code only, and plain JSON only, because EmDash passes them to the plugin as JSON; a function, RegExp or Date throws):
+
+| Option | Default | What it does |
+| --- | --- | --- |
+| `collections` | every collection with search support that is routable and not hidden | The collection slugs to index. A listed collection that is not routable is skipped with a build warning. |
+| `budget` | `{ gzipKB: 300 }` | The size warning for each locale's index, gzipped. |
+| `clip` | whole text | Characters of each entry's text the index keeps. |
+| `filesPath` | `/_search/embed/` | Where the site serves the embed. Must match `searchFiles({ path })`. |
+
+**Check the layout.** The plugin's two tags print only where your layout renders `<EmDashHead>` and `<EmDashBodyEnd page={page} />`. Most EmDash themes do, but a hand-made layout may not. To check: open a public page, view its source, and look for `data-search-config` near the end of `<body>`. If it is not there, add `<EmDashBodyEnd page={page} />` before `</body>`.
+
+### Site URL
+
+The build needs no site URL. The index holds paths only (`/posts/hello`), so search links work on any address the site is served at. EmDash does not read Astro's `site`. Only when you set one in EmDash (`siteUrl` in `emdash({ siteUrl })`, the `SITE_URL` environment variable, Settings > General or the setup wizard) does the admin page show a "Built for" line with it under the index; with none, that line is not shown.
+
+The first build runs by itself within a minute of install. If no collection has search turned on yet, the build waits and runs once one does.
+
+### Cloudflare
+
+On Cloudflare, the plugin needs the Workers Paid plan. Node hosting has no such limit.
+
+A rebuild runs inside the Worker, and the Free plan allows 50 D1 queries and 10 ms of CPU per run. A build makes about 8.5 D1 queries per 100 pages (39 for a 42-page site, 89 for 1,042 pages), so the Paid plan's 1,000 queries per run fit about 11,000 pages. When a build hits a plan limit, the old index stays and the admin page says so.
+
+The rebuild runs on EmDash's cron, so the Worker needs EmDash's Worker entry and a Cron Trigger every minute. Without both, no first build runs and no change is picked up.
+
+```ts
+// src/worker.ts
+export { default, PluginBridge } from "@emdash-cms/cloudflare/worker";
+```
+
+```jsonc
+// wrangler.jsonc
+{
+	"main": "./src/worker.ts",
+	"compatibility_flags": ["nodejs_compat"],
+	"triggers": { "crons": ["* * * * *"] }
+}
+```
+
+Then run `npx emdash doctor`: it checks the Worker entry. Astro 7.3 needs `@astrojs/cloudflare` 14.3.x. To test the cron locally, build the site, run `wrangler dev --test-scheduled`, then call `/cdn-cgi/handler/scheduled?cron=*+*+*+*+*` (for example `curl "http://localhost:8787/cdn-cgi/handler/scheduled?cron=*+*+*+*+*"`).
+
+If the Worker fails at start with a `require` error from `postcss` (EmDash's HTML sanitizer pulls it in, and Vite 8 leaves its `require` calls to a shim that Workers lack), add a small Vite plugin that gives server chunks a `require` from `node:module`, with `nodejs_compat` on:
+
+```js
+// astro.config.mjs, in vite.plugins
+{
+	name: "workers-require",
+	applyToEnvironment: (environment) => environment.config.consumer === "server",
+	renderChunk(code) {
+		if (!code.includes("typeof require")) return null;
+		return { code: `import { createRequire as __cr } from "node:module";\nconst require = __cr("/");\n${code}`, map: null };
+	},
+}
+```
+
+### Settings
+
+The admin page's settings take effect on the next page view, with no rebuild.
+
+| Setting | Default |
+| --- | --- |
+| First and second shortcut | `mod+k` and `/` |
+| Take over the theme's search form | off |
+| Search input name | `q` |
+| Search box text | `Search the site` |
+| Theme | auto |
+| Results page URL | `/search` |
+
+With takeover on, the theme's search form and EmDash's `LiveSearch` header box open the dialog, and the shortcut keys win over the theme's own (see [Theme takeover](#theme-takeover)). The results page URL must match your search form's `action` exactly, trailing slash included.
+
+The rest of the [config tag](#the-config-tag) is fixed on EmDash: `queryParam` is `q` and `paramPrefix` is empty (no prefix), so the results URL is `/search?q=...` with `type`, `index` and facet names as they are. Of the [strings](#strings), only `placeholder` comes from the admin page (Search box text). The index is always `default`, and `takeover.skip` and `takeover.allowFields` keep their defaults.
+
+Known limits: Space cannot be a shortcut key. On a Mac, Ctrl records as `ctrl`, not `mod` (`mod` is Cmd on a Mac and Ctrl elsewhere).
+
+### When a build fails
+
+The admin page shows why the last build failed, and the old index stays live. One exception: `no-collections`, when no collection is left to index, takes the old index down too, so the manifest answers 503 and the theme's own search works again. The codes (`plan-limit` for a Cloudflare plan too small, `no-collections` when no collection has search turned on, `too-large` over the size cap, `deadline` and `interrupted` for a build cut short, and the rest) and what to do about each are in [astronomic.dev/docs/search/troubleshooting](https://astronomic.dev/docs/search/troubleshooting).
+
+### What is indexed
+
+- One record per published entry in the indexed collections, one index per locale. The URL comes from EmDash itself, so URL patterns, locale paths and trailing slashes match the site.
+- The text is the plain text of the content, then the excerpt, summary, description and SEO description. A `search_keywords` field (a list or a comma list) adds keywords. EmDash field slugs are lowercase, so name it that way.
+- Skipped: drafts, scheduled entries until they publish, entries with `seo.noIndex` on, and entries with no public URL.
+- No heading records yet: EmDash's renderer prints no heading ids, so a result links to the page, not a section. Heading text is still searched.
+
+### How fast a change shows
+
+About a minute. Publish, unpublish, delete, restore, save of a published entry, schedule and unschedule each mark the index as stale. The build runs once edits stop for 10 seconds, or at most a minute after the first one. A full rebuild also runs every night, and Rebuild now runs one at once. A build never replaces the live index until it has finished, so search keeps working while it runs.
+
+### Size limits
+
+Each locale's index is capped at 8,000,000 bytes of JSON, the most EmDash lets a plugin route send. Over the cap, the build fails, the old index stays, and the admin page says how far over it is. To get under it, index fewer collections or set a smaller `clip`. The 300 KB gzip budget is a warning only: the admin page shows green up to 80% of it, amber up to 100% and red above. At 5,000 records the admin page says the site is past the size this engine is made for.
+
+Measured: a 10,000-entry site stores its index in 4 chunks, 376 KB gzip, and builds in about 2 seconds. The admin page's own code is about 5 KB gzip and loads only in the admin.
+
+### The search page
+
+Replace the body of the theme's search page with `<SearchResults>`, inside the theme's container. Put the theme's own form and result list in its slot. They show when the script does not run, and stop showing when the search page draws, so the page never shows two search fields.
+
+```astro
+---
+import { getContentSeo, getEmDashEntry, search } from "emdash";
+import SearchResults from "@astronomic-dev/search/emdash/astro/SearchResults.astro";
+import Base from "../layouts/Base.astro";
+// Your theme's own link helper: the one its list pages use for each entry's URL.
+import { entryUrl } from "../utils/urls";
+
+export const prerender = false;
+const query = Astro.url.searchParams.get("q")?.trim() || "";
+const found = query ? (await search(query, { limit: 30 })).items : [];
+// EmDash's search skips drafts only. Drop entries with "noindex" on, as the search index does.
+const shown = await Promise.all(
+	found.map(async (item) => {
+		const { entry } = await getEmDashEntry(item.collection, item.slug ?? item.id, { locale: item.locale });
+		return !!entry && getContentSeo(entry)?.noIndex !== true;
+	}),
+);
+const items = found.filter((_, i) => shown[i]);
+---
+
+<Base title="Search">
+	<div class="frame">
+		<SearchResults query={query}>
+			<form method="get" action="/search" role="search">
+				<input type="search" name="q" value={query} aria-label="Search" />
+				<button>Search</button>
+			</form>
+			<ol>
+				{items.map((item) => <li><a href={entryUrl(item)}>{item.title ?? item.slug}</a></li>)}
+			</ol>
+		</SearchResults>
+	</div>
+</Base>
+```
+
+`frame` stands for the theme's own container, and `entryUrl` for its own link helper. Use your theme's links: a collection's URL pattern, locale prefix or trailing slash can differ from `/collection/slug`, so a link built by hand may 404. The `noIndex` check drops the entries the index leaves out, since EmDash's `search()` filters by status only. The page takes the theme's font and text color. Its Search button is an outline in the text color; set `--search-accent` (and `--search-accent-fg`) to fill it with your brand color.
+
+### Caching
+
+The manifest and index routes (`/_emdash/api/plugins/astronomic-search/manifest` and `.../index`) send `public, max-age=0, must-revalidate` with an ETag, so a browser revalidates each time and a new build shows at once. With no build yet, the manifest answers 503 and the theme's own search keeps working. On the Cloudflare adapter, `searchFiles()` also writes cache rules for `/_search/embed/` to `_headers`: hashed chunks for a year, the boot and its lists for 5 minutes (the boot's `?ver=` changes each release).
+
+### Later
+
+Not built yet: a sandboxed listing in EmDash's registry, ranking weights in the admin page, several indexes, heading links, and the Cloudflare Free plan (by building the index at deploy time).
 
 ## Content Security Policy
 
@@ -521,7 +735,9 @@ Measured on astronomic.dev (Docs, Learn, Themes, the changelog and the main page
 
 The engine-only columns time MiniSearch alone. A full dialog query (the engine, then grouping, filter counts and highlights) took about 10 ms at p95 at 4x CPU on the 528 records.
 
-The boot script on every page is about 2 KB gzip (2.07 KB measured). The app (engine, controller, browser behavior and dialog) is about 24 KB gzip (24.1 KB measured) and loads only on first use. MiniSearch, the engine, is about 6 KB of that.
+The boot script on every page is about 2 KB gzip (2.08 KB measured, budget 2.25 KB). The app (engine, controller, browser behavior and dialog) is about 25 KB gzip (25.17 KB measured, budget 25.17 KB) and loads only on first use. MiniSearch, the engine, is about 6 KB of that.
+
+The embed's boot is 6.22 KB gzip (budget 6.22 KB); it holds the takeover, placements and the phone proxy, so it is larger than the integration's. Its dialog chunk is 26.19 KB (budget 26.48 KB), its results page chunk 22.41 KB (budget 24.62 KB), and the boot plus the dialog, the cold transfer on first use, 32.41 KB (budget 32.42 KB). The budgets are in `test/budgets.json`, and the tests fail past them. More: [astronomic.dev/docs/search/performance](https://astronomic.dev/docs/search/performance).
 
 **When to move on (later).** Every record loads into the visitor's browser. At about 5,000 page and heading records, the load on a slowed-down phone passes half a second, and a site that big should move to a Pagefind-based engine, which loads only the parts of the index a query needs. That engine is planned, not built yet.
 

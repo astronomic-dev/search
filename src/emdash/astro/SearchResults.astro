@@ -1,0 +1,21 @@
+---
+/**
+ * The results mount for an EmDash site's own search page. Put the site's server-rendered result list in the slot: it
+ * shows with no JavaScript, and the search embed draws its results page over it once the index is loaded (README,
+ * "The results mount"). If anything fails, the site's list stays.
+ */
+interface Props {
+	/** The query the server searched for, for pretty URLs such as `/search/lighthouse/`. */
+	query?: string;
+	/** The index to search. Default: the URL's, then the config tag's. */
+	index?: string;
+	/** The types the page shows: a list, or one comma-separated string. */
+	types?: string | string[];
+	class?: string;
+}
+
+const { query, index, types, class: className } = Astro.props;
+const typeList = Array.isArray(types) ? types.join(",") : types;
+---
+
+<div data-search-results data-search-query={query || undefined} data-search-index={index || undefined} data-search-types={typeList || undefined} class={className}><slot /></div>

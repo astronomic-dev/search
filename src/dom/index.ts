@@ -41,12 +41,20 @@ export interface MountOptions {
 	idFor: (recordId: string) => string;
 	/** Shortcut keys, for example ["mod+k", "/"]; [] for none (the setting shortcut: false). */
 	keys: string[];
+	/** Listen for the shortcut in the window's capture phase and stop a press it acts on, so it wins over the page's own listeners (the embed's takeover). Default false. */
+	capture?: boolean;
 	/** Default true. A kit recipe passes false and opens with the kit's openModal() through `show`. */
 	scrollLock?: boolean;
 	show?: (dialog: HTMLDialogElement) => void;
 	/** Default: read from navigator. */
 	apple?: boolean;
 	navigate?: (url: string, newTab: boolean) => void;
+	/**
+	 * Open every result in a new tab; the dialog stays open. Default false. A result link of yours to the option's URL
+	 * with target="_blank" rel="noopener" is followed by the browser itself, so a pop-up blocker never stops a click on
+	 * it (with no `navigate`); any other click goes through `navigate` or window.open.
+	 */
+	newTab?: boolean;
 	/** Live region delay in ms, and the quiet time before search:query. Default 600. */
 	liveDelay?: number;
 	/** Called just before the dialog opens: with the trigger that opened it, or null for the shortcut. */
@@ -83,7 +91,7 @@ export function mountSearch(options: MountOptions): () => void {
 	const events = options.events === false ? null : bindEvents(options.dialog, controller, { delay: options.liveDelay });
 	const unbinds = [
 		...triggers.map((t) => bindTrigger(t, controller, { keys: t === main ? keys : [], apple, onOpen: fromTrigger })),
-		bindShortcut(win, keys, controller, { main, apple, onOpen: fromShortcut }),
+		bindShortcut(win, keys, controller, { main, apple, capture: options.capture, onOpen: fromShortcut }),
 		bindDialog(options.dialog, options.input, controller, {
 			scrollLock: options.scrollLock,
 			show: options.show,
@@ -94,7 +102,7 @@ export function mountSearch(options: MountOptions): () => void {
 				return el;
 			},
 		}),
-		bindCombobox(options.input, options.listbox, controller, options.idFor, { navigate: options.navigate, onSelect: events?.select }),
+		bindCombobox(options.input, options.listbox, controller, options.idFor, { navigate: options.navigate, newTab: options.newTab, onSelect: events?.select }),
 		bindLive(options.live, controller, { delay: options.liveDelay }),
 	];
 	if (events) unbinds.push(events.unbind);

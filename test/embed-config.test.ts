@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { embedSeeAll, parseEmbedConfig, readConfigTag, type EmbedConfig } from "../src/browser/config.ts";
+import { readLinks } from "../src/browser/embed/links.ts";
 
 const full = {
 	manifest: "/_search/manifest.json",
@@ -126,6 +127,23 @@ test("readConfigTag ignores a tag inside [data-search-page]", () => {
 		{ text: '{"manifest":"/second.json"}', inPage: false },
 	]));
 	assert.equal(got?.manifest, "/embed.json");
+});
+
+test('readLinks: only "new-tab" counts; any other value, bad JSON or no tag gives undefined, never a throw', () => {
+	const links = (text: string) => readLinks(docWith([{ text, inPage: false }]));
+	assert.equal(links('{"manifest":"/m.json","links":"new-tab"}'), "new-tab");
+	assert.equal(links('{"manifest":"/m.json"}'), undefined);
+	for (const v of [true, "_blank", "new_tab", "same-tab", "New-Tab", "", null, 1, ["new-tab"], {}]) assert.equal(links(JSON.stringify({ manifest: "/m.json", links: v })), undefined, JSON.stringify(v));
+	for (const text of ["", "{", "null", "[]", '"new-tab"', "3"]) assert.equal(links(text), undefined, text);
+	assert.equal(readLinks(docWith([])), undefined);
+});
+
+test("readLinks reads the tag readConfigTag reads: the first one outside [data-search-page]", () => {
+	const on = '{"manifest":"/m.json","links":"new-tab"}';
+	const off = '{"manifest":"/m.json"}';
+	assert.equal(readLinks(docWith([{ text: on, inPage: true }])), undefined);
+	assert.equal(readLinks(docWith([{ text: off, inPage: true }, { text: on, inPage: false }])), "new-tab");
+	assert.equal(readLinks(docWith([{ text: off, inPage: false }, { text: on, inPage: false }])), undefined);
 });
 
 test("seeAll for an embed: a non-default index writes z_index; the picked type and facets go along; the default index is written too", () => {

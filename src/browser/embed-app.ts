@@ -6,6 +6,7 @@
  * At once it makes the default dialog for `config.index`, and that dialog owns the shortcut keys whatever triggers the
  * host page has: the boot hands the shortcut over to it, so exactly one dialog answers it.
  */
+import { readLinks } from "./embed/links.ts";
 import { openFrom, placementText, type OpenFrom } from "./embed/open-from.ts";
 import { embedSeeAll, type EmbedConfig } from "./config.ts";
 import { startApp, type SearchApp } from "./start-app.ts";
@@ -31,6 +32,9 @@ export function createEmbedApp(config: EmbedConfig): EmbedApp {
 		lang: config.lang,
 		results: config.results,
 		seeAll: embedSeeAll(config),
+		// With takeover on, the shortcut wins over the theme's own (a theme script that takes Cmd+K for its header box).
+		capture: config.takeover.enabled && !config.standDown,
+		newTab: readLinks(document) === "new-tab",
 	});
 	/**
 	 * Each dialog the app makes or finds, with the config's theme on it unless it has a theme of its own (a host

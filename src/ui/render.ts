@@ -26,6 +26,8 @@ export interface RenderContext {
 	facetLabel: (facet: string) => string;
 	/** Links for the error state. */
 	browse: BrowseLink[];
+	/** Links open in a new tab, and the footer says so. */
+	newTab?: boolean;
 }
 
 type Child = Node | string | null | undefined | false;
@@ -36,6 +38,12 @@ function h(doc: Document, tag: string, attrs: Record<string, string | undefined>
 	for (const c of children) if (c !== null && c !== undefined && c !== false && c !== "") el.append(c);
 	return el;
 }
+
+/** The attributes of a link that opens in a new tab; none without newTab. */
+const linkTarget = (ctx: RenderContext): Record<string, string> => (ctx.newTab ? { target: "_blank", rel: "noopener" } : {});
+
+/** The id of the footer's new-tab notice; undefined (no attribute) without newTab. */
+const noticeId = (ctx: RenderContext): string | undefined => (ctx.newTab ? ctx.idFor("label:new-tab") : undefined);
 
 /** Record text with <mark part="mark"> around each range: the dom layer's marked(), re-exported for the default dialog. */
 export { marked };
@@ -57,6 +65,7 @@ function option(doc: Document, record: SearchRecord, hl: Highlight, ctx: RenderC
 		href: link ? record.url : undefined,
 		// A link inside the listbox is never a tab stop: focus stays in the box.
 		tabindex: link ? "-1" : undefined,
+		...(link && linkTarget(ctx)),
 	});
 	if (record.kind === "heading") {
 		el.append(span(doc, "option-heading", marked(doc, record.heading, hl.heading ?? [])));
@@ -76,7 +85,7 @@ function suggestedGroup(doc: Document, options: Option[], ctx: RenderContext): H
 	const labelId = ctx.idFor("label:suggested");
 	const label = h(doc, "div", { part: "group-label", id: labelId, role: "presentation" }, ctx.strings.suggested);
 	const items = links.map((o) =>
-		h(doc, "a", { role: "option", id: ctx.idFor(o.id), part: "option", "data-kind": "suggested", href: o.url, tabindex: "-1" }, span(doc, "option-title", [doc.createTextNode(o.label ?? o.url!)])),
+		h(doc, "a", { role: "option", id: ctx.idFor(o.id), part: "option", "data-kind": "suggested", href: o.url, tabindex: "-1", ...linkTarget(ctx) }, span(doc, "option-title", [doc.createTextNode(o.label ?? o.url!)])),
 	);
 	// "group suggested": styled as a results group, with a part of its own to style it apart.
 	return [h(doc, "div", { role: "group", part: "group suggested", "aria-labelledby": labelId }, label, ...items)];
@@ -131,7 +140,7 @@ export function renderMessage(doc: Document, state: State, ctx: RenderContext): 
 	const q = state.query.trim();
 	if (state.status === "error") {
 		// Only a relative or http(s) URL becomes a link (the build checks them too).
-		const links = ctx.browse.filter((l) => isSafeUrl(l.href)).map((l) => h(doc, "li", {}, h(doc, "a", { href: l.href, tabindex: "0" }, l.label)));
+		const links = ctx.browse.filter((l) => isSafeUrl(l.href)).map((l) => h(doc, "li", {}, h(doc, "a", { href: l.href, tabindex: "0", "aria-describedby": noticeId(ctx), ...linkTarget(ctx) }, l.label)));
 		const browseId = ctx.idFor("label:browse");
 		return h(
 			doc,
@@ -284,6 +293,8 @@ export function renderShell(doc: Document, ctx: RenderContext): Shell {
 		autocapitalize: "off",
 		autocorrect: "off",
 		enterkeyhint: "go",
+		// Once here, not on each option: focus stays in the box.
+		"aria-describedby": noticeId(ctx),
 	}) as HTMLInputElement;
 	const close = button(doc, { part: "close", "aria-label": strings.close }, icon(doc, "M5 5l10 10M15 5L5 15"));
 	const tablist = h(doc, "div", { part: "tabs", hidden: "" });
@@ -294,7 +305,7 @@ export function renderShell(doc: Document, ctx: RenderContext): Shell {
 	const listbox = h(doc, "div", { part: "results", role: "listbox", "aria-label": strings.dialogLabel, hidden: "" });
 	const message = h(doc, "div", { class: "message" });
 	const body = h(doc, "div", { class: "body" }, listbox, message);
-	const seeAll = h(doc, "a", { part: "see-all", href: "", tabindex: "0" }, strings.seeAll) as HTMLAnchorElement;
+	const seeAll = h(doc, "a", { part: "see-all", href: "", tabindex: "0", "aria-describedby": noticeId(ctx), ...linkTarget(ctx) }, strings.seeAll) as HTMLAnchorElement;
 	const hints = h(
 		doc,
 		"p",
@@ -304,7 +315,8 @@ export function renderShell(doc: Document, ctx: RenderContext): Shell {
 		h(doc, "span", {}, kbd("↵"), ` ${strings.keys.open}`),
 		h(doc, "span", {}, kbd("esc"), ` ${strings.keys.close}`),
 	);
-	const footer = h(doc, "div", { part: "footer" }, hints, seeAll);
+	const notice = ctx.newTab && h(doc, "p", { part: "new-tab", id: noticeId(ctx) }, strings.newTab);
+	const footer = h(doc, "div", { part: "footer" }, hints, notice, seeAll);
 	const live = h(doc, "div", { part: "status", class: "visually-hidden" });
 	const header = h(doc, "div", { part: "header" }, h(doc, "label", { class: "field" }, icon(doc, "M9 15.5a6.5 6.5 0 1 0 0-13 6.5 6.5 0 0 0 0 13zM13.75 13.75L17.5 17.5"), input));
 	// The close button sits after the tabs and facets, so Tab goes box, tabs, toggle, facets, close; CSS shows it in the header.

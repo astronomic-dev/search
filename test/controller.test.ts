@@ -395,6 +395,12 @@ test("a searcher that throws gives error, not a crash", async () => {
 	assert.equal(t.c.getState().status, "error");
 });
 
+test("strings: the new-tab notice has a default, and a site can replace it", async () => {
+	const { mergeStrings } = await import("../src/controller/strings.ts");
+	assert.equal(mergeStrings().newTab, "Links open in a new tab");
+	assert.equal(mergeStrings({ newTab: "Opens in a new tab" }).newTab, "Opens in a new tab");
+});
+
 test("suggested links: options in an empty box once loaded, none active; arrows reach them; a query replaces them", async () => {
 	const base = stub().searcher;
 	const suggested = [{ label: "Start here", href: "/docs/start" }, { label: "Pricing", href: "/pricing", type: "pages" }];

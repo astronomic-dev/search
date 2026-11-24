@@ -36,16 +36,6 @@ export interface OpenRequest {
 
 export type Open = (r: OpenRequest) => void;
 
-/**
- * The least time a touch open keeps focus in the proxy before the handoff. On an iPhone a handoff a few ms after the
- * proxy took focus left the keyboard up but typed nothing, most often when the keyboard was already up from a focus
- * return; 100 ms and more worked every time.
- */
-const HANDOFF = 150;
-
-/** How long a submit-started open waits for the app and the index, together, before the form submits natively. */
-const DEADLINE = 4000;
-
 export interface AppHandle {
 	/** Loads the app chunk (once; again after a failure). */
 	load(): Promise<EmbedApp>;
@@ -58,21 +48,34 @@ const caretOf = (input: HTMLInputElement): [number, number] => {
 	return [input.selectionStart ?? end, input.selectionEnd ?? end];
 };
 
-/**
- * Why a session ends: quietly (handed off and settled, closed, dismissed or replaced), Escape in the proxy, a submit
- * open's deadline or index failure, or the app chunk failing to load.
- */
-const QUIET = 0;
-const ESCAPE = 1;
-const FAIL = 2;
-const NO_APP = 3;
+/** When takeover has taken `field` (a theme form's field or LiveSearch), it gives it back, for good; truthy then. */
+export type Release = (field: HTMLInputElement) => unknown;
 
 /**
  * The open function. `defaultPlaceholder` is the proxy's text when the source's placement has none. `onFail` runs
  * when the app fails to load during the current open: the proxy's text goes back to the field (focused) or a link
- * follows its href, so the page works as it does with no JavaScript. `theme` (the config's) goes on the proxy.
+ * follows its href, so the page works as it does with no JavaScript. `theme` (the config's) goes on the proxy. A theme
+ * field's open (`release`) also fails when the dialog's index fails to load (a 503 before the first build): the field is
+ * released, the dialog closes, and the text and focus go back to the field.
  */
-export function createOpen(doc: Document, app: AppHandle, defaultPlaceholder: string, onFail: () => void, theme?: string): Open {
+export function createOpen(doc: Document, app: AppHandle, defaultPlaceholder: string, onFail: () => void, theme?: string, release?: Release): Open {
+	// Constants first in this function, not the module, so the build inlines them.
+	/**
+	 * Why a session ends: quietly (handed off and settled, closed, dismissed or replaced), Escape in the proxy, a submit
+	 * open's deadline or index failure, or the app chunk failing to load.
+	 */
+	const QUIET = 0;
+	const ESCAPE = 1;
+	const FAIL = 2;
+	const NO_APP = 3;
+	/**
+	 * The least time a touch open keeps focus in the proxy before the handoff. On an iPhone a handoff a few ms after the
+	 * proxy took focus left the keyboard up but typed nothing, most often when the keyboard was already up from a focus
+	 * return; 100 ms and more worked every time.
+	 */
+	const HANDOFF = 150;
+	/** How long a submit-started open waits for the app and the index, together, before the form submits natively. */
+	const DEADLINE = 4000;
 	/** Ends the current session. */
 	let cur: ((why: number) => void) | null = null;
 
@@ -97,15 +100,23 @@ export function createOpen(doc: Document, app: AppHandle, defaultPlaceholder: st
 			if (fallback) {
 				fallback(text);
 				el?.controller.close();
-			} else if (field) {
+			} else if (field && (release?.(field) || !el)) {
+				// The app failed, or the dialog's index did for a theme field: that field goes back to the theme (released
+				// first, so the focus return does not open it again; onFail does not reach one that is out of the page). A placement's dialog stays, with its error. The input
+				// event lets the field's own search (LiveSearch, which listens on the input itself) run on the text.
+				el?.controller.close();
 				field.value = text;
 				field.focus({ preventScroll: true });
+				field.dispatchEvent(new Event("input"));
 			} else if (opener instanceof HTMLAnchorElement) location.assign(opener.href);
 		};
 		cur = end;
 		if (fallback) timer = setTimeout(end, DEADLINE, FAIL);
 
-		/** Opens the real dialog. A submit-started open stays current until its index is in, the dialog closes, or the deadline. */
+		/**
+		 * Opens the real dialog. A submit-started open, or a field's, stays current until its index is in, the dialog
+		 * closes, or (a submit's) the deadline.
+		 */
 		const toDialog = (a: EmbedApp, query: string, caret?: [number, number], handoff?: boolean) => {
 			// The order matters: the real input takes focus from the proxy input, then the proxy goes.
 			el = a.openFrom(source, { query, caret, handoff }, opener);
@@ -113,7 +124,7 @@ export function createOpen(doc: Document, app: AppHandle, defaultPlaceholder: st
 			proxy = undefined;
 			// The open's own focus move can start a newer open (a page's focusin listener): that one is current now.
 			if (cur !== end) return;
-			if (!fallback) return end(QUIET);
+			if (!fallback && !field) return end(QUIET);
 			const c = el.controller;
 			off = c.subscribe((st) => !st.open && end(QUIET));
 			c.preload().then(
@@ -123,7 +134,8 @@ export function createOpen(doc: Document, app: AppHandle, defaultPlaceholder: st
 		};
 
 		const ready = app.ready();
-		if (ready && !touch) return toDialog(ready, field?.value ?? "", field ? caretOf(field) : undefined);
+		const value = field?.value ?? "";
+		if (ready && !touch) return toDialog(ready, value, field ? caretOf(field) : undefined);
 		const text = placementText(source) || defaultPlaceholder;
 		// Inside the opener's open modal dialog (a nav drawer), if any: the page around it is inert. The walk goes up
 		// the composed tree (into a slot, out of a shadow root), so a drawer component's own shadow <dialog> counts.
@@ -132,7 +144,7 @@ export function createOpen(doc: Document, app: AppHandle, defaultPlaceholder: st
 		proxy = showProxy(doc, text, modal, theme);
 		const input = proxy.input;
 		const focused = () => (input.getRootNode() as ShadowRoot).activeElement === input;
-		input.value = field?.value ?? "";
+		input.value = value;
 		input.focus();
 		// No focus: a modal dialog the walk could not find (a closed shadow root's, whose slots are hidden) keeps the
 		// page inert. The opener's own subtree is rendered in that dialog, so the proxy mounts next to it instead, in

@@ -9,6 +9,12 @@ import { isSafeUrl } from "./safe-url.ts";
 export interface ComboboxOptions {
 	/** Opens a result. Default: location.assign(url), or window.open in a new tab. */
 	navigate?: (url: string, newTab: boolean) => void;
+	/**
+	 * Open every result in a new tab; the dialog stays open. Default false. A result link of yours to the option's URL
+	 * with target="_blank" rel="noopener" is followed by the browser itself, so a pop-up blocker never stops a click on
+	 * it (with no `navigate`); any other click goes through `navigate` or window.open.
+	 */
+	newTab?: boolean;
 	/** Called when an option is opened (Enter, a click, a new tab), with its 1-based position. mountSearch fires search:select from it. */
 	onSelect?: (option: Option, position: number) => void;
 }
@@ -115,7 +121,7 @@ export function bindCombobox(
 				break;
 			case "Enter": {
 				e.preventDefault();
-				go(picked(), e.metaKey || e.ctrlKey);
+				go(picked(), options.newTab || e.metaKey || e.ctrlKey);
 				break;
 			}
 		}
@@ -147,11 +153,14 @@ export function bindCombobox(
 		point(i);
 		const option = picked();
 		const plain = e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey;
-		const link = (e.target as Element).closest("a[href]");
+		const link = (e.target as Element).closest<HTMLAnchorElement>("a[href]");
 		// A link opened with a modifier: the browser does what the user asked.
 		if (link && !plain) return;
+		// With newTab the browser follows a link to the option's URL in a new tab: a pop-up blocker never stops that. Any
+		// other link (no target, another href) goes to the option's URL through go, as a host's own `navigate` does.
+		if (link?.target === "_blank" && options.newTab && !options.navigate && option?.url && link.getAttribute("href") === option.url && isSafeUrl(option.url)) return;
 		e.preventDefault();
-		go(option, !plain);
+		go(option, options.newTab || !plain);
 	};
 	// A middle click fires auxclick, not click: the browser opens the link as it would, and the select is still sent.
 	const onAux = (e: MouseEvent) => {

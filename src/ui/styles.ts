@@ -347,6 +347,7 @@ button:focus-visible, a:focus-visible {
 	color: var(--_muted);
 }
 .hints { display: flex; flex-wrap: wrap; gap: 0.25rem 0.875rem; margin: 0; }
+[part="new-tab"] { margin: 0; }
 [part="kbd"] {
 	display: inline-grid;
 	place-items: center;

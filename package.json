@@ -1,10 +1,10 @@
 {
   "name": "@astronomic-dev/search",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "type": "module",
   "packageManager": "pnpm@11.21.0",
   "license": "MIT",
-  "description": "Fuzzy site search in a dialog for Astro: a build-time index that loads on first use, a headless controller, accessible browser behavior and a default dialog.",
+  "description": "Fuzzy site search in a dialog for Astro and EmDash: a search index that loads on first use, a headless controller, accessible browser behavior and a default dialog.",
   "keywords": [
     "astro",
     "astro-component",
@@ -12,7 +12,9 @@
     "withastro",
     "search",
     "site-search",
-    "fuzzy-search"
+    "fuzzy-search",
+    "emdash",
+    "emdash-plugin"
   ],
   "repository": {
     "type": "git",
@@ -23,7 +25,8 @@
     "url": "https://github.com/astronomic-dev/search/issues"
   },
   "files": [
-    "dist/"
+    "dist/",
+    "CHANGELOG.md"
   ],
   "exports": {
     "./core": "./src/core/index.ts",
@@ -41,6 +44,10 @@
     "./astro/virtual": {
       "types": "./src/astro/virtual.d.ts"
     },
+    "./emdash": "./src/emdash/index.ts",
+    "./emdash/admin": "./src/emdash/admin/index.tsx",
+    "./emdash/astro": "./src/emdash/astro/index.ts",
+    "./emdash/astro/SearchResults.astro": "./src/emdash/astro/SearchResults.astro",
     "./test-suite": "./test/browser/suite.mjs"
   },
   "publishConfig": {
@@ -87,7 +94,20 @@
       "./astro/SearchPage.astro": "./dist/astro/SearchPage.astro",
       "./astro/virtual": {
         "types": "./dist/astro/virtual.d.ts"
-      }
+      },
+      "./emdash": {
+        "types": "./dist/emdash/index.d.ts",
+        "default": "./dist/emdash/index.js"
+      },
+      "./emdash/admin": {
+        "types": "./dist/emdash/admin/index.d.ts",
+        "default": "./dist/emdash/admin/index.js"
+      },
+      "./emdash/astro": {
+        "types": "./dist/emdash/astro/index.d.ts",
+        "default": "./dist/emdash/astro/index.js"
+      },
+      "./emdash/astro/SearchResults.astro": "./dist/emdash/astro/SearchResults.astro"
     }
   },
   "scripts": {
@@ -100,19 +120,40 @@
     "ultrahtml": "1.7.0"
   },
   "peerDependencies": {
-    "astro": "^7.0.0"
+    "@cloudflare/kumo": "^2.6.0",
+    "@phosphor-icons/react": "^2.1.10",
+    "astro": "^7.0.0",
+    "emdash": "^1.4.0",
+    "react": "^18.0.0 || ^19.0.0"
   },
   "peerDependenciesMeta": {
+    "@cloudflare/kumo": {
+      "optional": true
+    },
+    "@phosphor-icons/react": {
+      "optional": true
+    },
     "astro": {
+      "optional": true
+    },
+    "emdash": {
+      "optional": true
+    },
+    "react": {
       "optional": true
     }
   },
   "devDependencies": {
+    "@cloudflare/kumo": "2.6.0",
+    "@phosphor-icons/react": "2.1.10",
     "@playwright/test": "1.63.0",
     "@types/node": "26.6.3",
+    "@types/react": "19.3.0",
     "astro": "^7.3.5",
     "axe-core": "4.13.0",
+    "emdash": "1.4.0",
     "esbuild": "0.28.2",
+    "react": "19.3.0",
     "typescript": "6.0.3"
   }
 }

@@ -19,6 +19,10 @@ export interface AppConfig {
 	/** The results page URL. */
 	results?: string;
 	seeAll?: SeeAll;
+	/** Listen for the shortcut in the window's capture phase and stop a press it acts on, so it wins over the page's own listeners (the embed's takeover). Default false. */
+	capture?: boolean;
+	/** Open every result and link of the dialog in a new tab; the dialog stays open. Default false. */
+	newTab?: boolean;
 }
 
 export interface SearchApp {
@@ -67,6 +71,8 @@ export function startApp(config: AppConfig): SearchApp {
 		browse: config.browse,
 		results: config.results,
 		seeAll: config.seeAll,
+		capture: config.capture,
+		newTab: config.newTab,
 		load: (index) =>
 			loadSearcher({
 				index,

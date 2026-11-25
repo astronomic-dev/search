@@ -1,8 +1,8 @@
 # @astronomic-dev/search
 
-[![The Astronomic Search page on astronomic.dev: the headline “Help visitors find what they came for” beside a live search for “dark mode” with type filters and results that link to matching headings](https://raw.githubusercontent.com/astronomic-dev/search/main/.github/hero.webp)](https://astronomic.dev/plugins/search)
+[![The Astronomic Search page on astronomic.dev: the headline “Lightning-fast, typo-tolerant search for Astro” over a live search for “prodution”, a typo, with type filters and results that match “production”, beside a panel that sets the mode, accent, corners and font](https://raw.githubusercontent.com/astronomic-dev/search/main/.github/hero.webp)](https://astronomic.dev/plugins/search)
 
-See it live and read the guide at [astronomic.dev/plugins/search](https://astronomic.dev/plugins/search).
+See it live: [search for Astro](https://astronomic.dev/plugins/search) and [search for EmDash](https://astronomic.dev/plugins/emdash-search).
 
 Full docs, for Astro and EmDash: [astronomic.dev/docs/search](https://astronomic.dev/docs/search).
 
@@ -128,6 +128,7 @@ search({
 | `shortcut` | site | `{ keys: [...] }` or `false`. Default `["mod+k", "/"]`. |
 | `strings` | site | Labels that replace the US English defaults (see Strings). |
 | `browse` | site | Links for the error state and the no-JavaScript part: `[{ label, href }]`. Each `href` must be a canonical URL on this site (with `trailingSlash: "ignore"`, either slash); the build fails otherwise. |
+| `theme` | site | `"light"` or `"dark"`: the dialog's colors, whatever the visitor's device is set to. Left out, it follows the device. See [Light, dark and toggles](#light-dark-and-toggles). |
 
 ## Adapters
 
@@ -189,7 +190,7 @@ For a worked example, see the Search family in [`@astronomic-dev/ui`](https://as
 | `index` | The index to search. Default: the `default` setting. |
 | `types` | A comma list of the types this dialog shows. Default: all of the index's types. |
 | `group` | `type`, a facet name, or `false`: overrides the index's `group.dialog` for this dialog. |
-| `theme` | `light` or `dark`. Default: the visitor's system setting. |
+| `theme` | `light` or `dark`. Default: the `theme` setting, else the visitor's system setting. On an element you place yourself, only this attribute counts. |
 
 `SearchLink` takes the same choices as props (`index`, `types`, `group`), plus `main` (the button the shortcut belongs to; default the first on the page) and `class`. Its slot is the label.
 
@@ -222,6 +223,69 @@ A trigger can open the dialog with a search already typed. Give it any of these 
 ```
 
 Any trigger works, the kit's too: the dom layer's `bindTrigger` reads them (`triggerStart()` from `@astronomic-dev/search/dom`) and calls `controller.open(start)`, which takes `{ query, type, picks }`. The dialog a trigger opens is still the one its `index`, `types` and `group` name, so these links share the page's one dialog and its shortcut.
+
+### Light, dark and toggles
+
+The dialog follows the visitor's device. To keep it light or dark for everyone, set `theme`:
+
+```js
+search({
+	sources: [collections({ docs: {} })],
+	theme: "light", // or "dark"
+});
+```
+
+It applies to every dialog `SearchLink` adds, on every page. A change to the `theme` attribute afterwards stays, through view transitions too. An `<astronomic-search>` you place yourself takes its own `theme` attribute, not this setting. The plain Astro `SearchPage` takes your page's colors, so `theme` does not change it.
+
+**A site with its own light and dark toggle.** Search cannot know what your toggle changes, so leave `theme` out and set the dialog's `theme` attribute with a small script. This one reads `<html data-theme="dark">` or `<html class="dark">`. Change the `dark` line if yours differs:
+
+```js
+// src/scripts/search-theme.js
+// Keeps the search dialog's theme the same as the site's toggle.
+const root = document.documentElement;
+
+function sync() {
+	const dark = root.dataset.theme === "dark" || root.classList.contains("dark");
+	for (const el of document.querySelectorAll("astronomic-search")) el.setAttribute("theme", dark ? "dark" : "light");
+}
+
+const observer = new MutationObserver(sync);
+// The toggle.
+observer.observe(root, { attributes: true, attributeFilter: ["data-theme", "class"] });
+// The dialog, which joins the page on first use.
+observer.observe(document, { childList: true, subtree: true });
+// A dialog already on the page.
+sync();
+```
+
+Load it from your layout, so every page has it:
+
+```astro
+<script>
+	import "../scripts/search-theme.js";
+</script>
+```
+
+It also sets a dialog that is made later, and it keeps working with Astro's `<ClientRouter />`.
+
+If your colors are already custom properties that your toggle changes, you can point the dialog's [custom properties](#custom-properties) at them instead, with no script. Use your own names for the ones on the right:
+
+```css
+astronomic-search {
+	--search-bg: var(--page);
+	--search-fg: var(--ink);
+	--search-muted: var(--ink-soft);
+	--search-border: var(--line);
+	--search-accent: var(--brand);
+	--search-accent-fg: var(--on-brand);
+	--search-focus: var(--brand);
+	--search-mark-bg: color-mix(in srgb, var(--brand) 25%, transparent);
+	--search-mark-fg: var(--ink);
+	color-scheme: inherit;
+}
+```
+
+`color-scheme: inherit` takes the page's own `color-scheme`, so the scrollbar matches. Any color you leave out still follows `theme`, or the device.
 
 ### Custom properties
 
@@ -530,6 +594,8 @@ These three names are reserved. A facet whose URL name equals the query, type or
 
 A free EmDash plugin ships in the same package. It builds the index from your EmDash content, keeps it fresh when you publish, serves it as JSON and prints the [embed](#embed-on-any-server) on every public page. It adds one admin page, **Search**, with the index status, a Rebuild now button and the settings. Tested on EmDash 1.4.0 and 1.6.0, including EmDash's default blog template (`create-emdash`).
 
+See it first: [astronomic.dev/plugins/emdash-search](https://astronomic.dev/plugins/emdash-search) has a live demo: search a sample site, and change the dialog's mode, color, corners and font.
+
 It is a native (trusted) plugin, installed from npm. It is not in EmDash's plugin registry, which lists sandboxed plugins only.
 
 ### Install
@@ -735,9 +801,9 @@ Measured on astronomic.dev (Docs, Learn, Themes, the changelog and the main page
 
 The engine-only columns time MiniSearch alone. A full dialog query (the engine, then grouping, filter counts and highlights) took about 10 ms at p95 at 4x CPU on the 528 records.
 
-The boot script on every page is about 2 KB gzip (2.08 KB measured, budget 2.25 KB). The app (engine, controller, browser behavior and dialog) is about 25 KB gzip (25.17 KB measured, budget 25.17 KB) and loads only on first use. MiniSearch, the engine, is about 6 KB of that.
+The boot script on every page is about 2 KB gzip (2.08 KB measured, budget 2.25 KB). The app (engine, controller, browser behavior and dialog) is about 25 KB gzip (25.15 KB measured, budget 25.17 KB) and loads only on first use. MiniSearch, the engine, is about 6 KB of that.
 
-The embed's boot is 6.22 KB gzip (budget 6.22 KB); it holds the takeover, placements and the phone proxy, so it is larger than the integration's. Its dialog chunk is 26.19 KB (budget 26.48 KB), its results page chunk 22.41 KB (budget 24.62 KB), and the boot plus the dialog, the cold transfer on first use, 32.41 KB (budget 32.42 KB). The budgets are in `test/budgets.json`, and the tests fail past them. More: [astronomic.dev/docs/search/performance](https://astronomic.dev/docs/search/performance).
+The embed's boot is 6.22 KB gzip (budget 6.22 KB); it holds the takeover, placements and the phone proxy, so it is larger than the integration's. Its dialog chunk is 26.16 KB (budget 26.48 KB), its results page chunk 22.41 KB (budget 24.62 KB), and the boot plus the dialog, the cold transfer on first use, 32.38 KB (budget 32.42 KB). The budgets are in `test/budgets.json`, and the tests fail past them. More: [astronomic.dev/docs/search/performance](https://astronomic.dev/docs/search/performance).
 
 **When to move on (later).** Every record loads into the visitor's browser. At about 5,000 page and heading records, the load on a slowed-down phone passes half a second, and a site that big should move to a Pagefind-based engine, which loads only the parts of the index a query needs. That engine is planned, not built yet.
 

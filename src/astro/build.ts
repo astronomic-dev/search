@@ -59,6 +59,8 @@ export interface SearchOptions extends Partial<IndexInput> {
 	strings?: StringsInput;
 	/** Links for the error state and the no-JavaScript part. */
 	browse?: BrowseLink[];
+	/** The dialog's colors, whatever the visitor's device is set to. Default: it follows the device. */
+	theme?: "light" | "dark";
 }
 
 export interface NormalIndex extends IndexShape {
@@ -87,9 +89,10 @@ export interface Settings {
 	shortcut: { keys: string[] } | false;
 	strings: StringsInput;
 	browse: BrowseLink[];
+	theme?: "light" | "dark";
 }
 
-const SITE_KEYS = ["indexes", "default", "shortcut", "strings", "browse"];
+const SITE_KEYS = ["indexes", "default", "shortcut", "strings", "browse", "theme"];
 const INDEX_KEYS = ["sources", "weights", "group", "groupOrder", "budget", "clip", "types", "facets", "suggested", "synonyms", "pinned"];
 /** One word as the engine's tokenizer sees it: no spaces, no punctuation. */
 const WORD = /^[^\n\r\p{Z}\p{P}]+$/u;
@@ -328,7 +331,9 @@ export function normalizeSettings(input: SearchOptions): Settings {
 	if (!Object.hasOwn(indexes, def)) throw new Error(`Search: default is "${def}", but there is no index with that name (indexes: ${Object.keys(indexes).join(", ")})`);
 	const shortcut = input.shortcut === false ? false : (input.shortcut ?? DEFAULT_SHORTCUT);
 	if (shortcut && !Array.isArray(shortcut.keys)) throw new Error('Search: shortcut must be false or { keys: [...] }');
-	return { indexes, default: def, shortcut, strings: input.strings ?? {}, browse: checkBrowseShape(input.browse) };
+	const { theme } = input;
+	if (theme !== undefined && theme !== "light" && theme !== "dark") throw new Error(`Search: theme must be "light" or "dark", not ${JSON.stringify(theme)} (leave it out to follow the device)`);
+	return { indexes, default: def, shortcut, strings: input.strings ?? {}, browse: checkBrowseShape(input.browse), ...(theme ? { theme } : {}) };
 }
 
 export const hash10 = (bytes: string | Uint8Array) => createHash("sha256").update(bytes).digest("hex").slice(0, 10);

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.1
+
+- The Astro integration takes a `theme` (`"light"` or `"dark"`): every dialog `SearchLink` adds uses it, whatever the visitor's device is set to. Left out, nothing changes: the dialog follows the device. Any other value fails the build.
+- The embed puts its config's `theme` on a dialog once, when it makes it. A host script that removes the `theme` attribute afterwards now keeps it removed.
+
 ## 0.2.0
 
 ### Added: the EmDash plugin

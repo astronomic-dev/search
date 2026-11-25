@@ -15,9 +15,11 @@ test("search() takes nested string overrides, as the docs show", () => {
 	const wrong: SearchOptions = { sources: [], strings: { nope: "x" } };
 	// @ts-expect-error results takes its plural forms, not a string
 	const flat: SearchOptions = { sources: [], strings: { results: "hits" } };
+	// @ts-expect-error a theme is light or dark
+	const auto: SearchOptions = { sources: [], theme: "auto" };
 	const bundle: BundleOptions["strings"] = normalizeSettings({ sources: [records(() => [])], strings: options.strings }).strings;
 	assert.equal(bundle.results?.one, "1 hit");
-	assert.ok(wrong && flat);
+	assert.ok(wrong && flat && auto);
 });
 
 test("a record's fields follow its kind", () => {

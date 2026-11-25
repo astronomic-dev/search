@@ -3,7 +3,7 @@
  * controller, the dom layer and the default dialog. It defines <astronomic-search> and makes one per trigger key
  * (see `startApp` in start-app.ts).
  *
- * When the integration starts, `__ASTRONOMIC_SEARCH__` is replaced with `{ manifest, index, strings, browse }`.
+ * When the integration starts, `__ASTRONOMIC_SEARCH__` is replaced with `{ manifest, index, strings, browse, theme? }`.
  */
 import { startApp, type AppConfig } from "./start-app.ts";
 

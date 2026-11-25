@@ -60,6 +60,17 @@ test("an index may not take a reserved name (an Object.prototype key)", () => {
 	assert.doesNotThrow(() => normalizeSettings({ indexes: { proto: { sources: [docs()] } } }));
 });
 
+test("theme is light or dark, and left out when not set (the dialog follows the device)", () => {
+	const sources = [docs()];
+	assert.equal(normalizeSettings({ sources, theme: "dark" }).theme, "dark");
+	assert.equal(normalizeSettings({ sources, theme: "light" }).theme, "light");
+	for (const s of [normalizeSettings({ sources }), normalizeSettings({ sources, theme: undefined })]) assert.equal("theme" in s, false);
+	// A site setting, beside named indexes too, and never one index's.
+	assert.equal(normalizeSettings({ indexes: { site: { sources } }, theme: "dark" }).theme, "dark");
+	assert.throws(() => normalizeSettings({ indexes: { site: { sources, theme: "dark" } as never } }), /index "site" has no setting "theme"/);
+	for (const theme of ["Dark", "auto", "", null, true]) assert.throws(() => normalizeSettings({ sources, theme } as never), /^Error: Search: theme must be "light" or "dark", not /);
+});
+
 test("named indexes; the default is the first unless named", () => {
 	const s = normalizeSettings({ indexes: { site: { sources: [docs()] }, kit: { sources: [records(() => [])] } }, shortcut: false });
 	assert.equal(s.default, "site");

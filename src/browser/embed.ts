@@ -78,7 +78,7 @@ function startEmbed(config: EmbedConfig): void {
 		if (loading) return loading;
 		early ??= earlyFor(config.index);
 		const url = new URL(__SEARCH_EMBED_APP__ + (tries ? "?r=" + tries : ""), import.meta.url).href;
-		loading = (import(/* @vite-ignore */ url) as Promise<AppModule>).then(
+		return (loading = (import(/* @vite-ignore */ url) as Promise<AppModule>).then(
 			(m) => {
 				const app = m.createEmbedApp(config);
 				app.usePrefetch(early!);
@@ -92,8 +92,7 @@ function startEmbed(config: EmbedConfig): void {
 				tries++;
 				throw e;
 			},
-		);
-		return loading;
+		));
 	}
 
 	/** Turns the embed off for the page (see `failed`); every taken field in it goes back to the theme. */

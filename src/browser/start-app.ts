@@ -23,6 +23,8 @@ export interface AppConfig {
 	capture?: boolean;
 	/** Open every result and link of the dialog in a new tab; the dialog stays open. Default false. */
 	newTab?: boolean;
+	/** The `theme` attribute of each dialog made here, set once as it is made, so a host script's later change stays. Default: none (the dialog follows the device). */
+	theme?: "light" | "dark";
 }
 
 export interface SearchApp {
@@ -66,13 +68,7 @@ export function startApp(config: AppConfig): SearchApp {
 	}
 
 	defineSearchElement({
-		index: config.index,
-		strings: config.strings,
-		browse: config.browse,
-		results: config.results,
-		seeAll: config.seeAll,
-		capture: config.capture,
-		newTab: config.newTab,
+		...config,
 		load: (index) =>
 			loadSearcher({
 				index,
@@ -103,9 +99,7 @@ export function startApp(config: AppConfig): SearchApp {
 		if (!el) {
 			el = document.createElement(TAG) as SearchElement;
 			const [index, types, group] = key.split("|");
-			el.setAttribute("index", index!);
-			if (types) el.setAttribute("types", types);
-			if (group) el.setAttribute("group", group);
+			for (const [name, value] of Object.entries({ index, types, group, theme: config.theme })) if (value) el.setAttribute(name, value);
 			el.keys = keys;
 			dialogs.set(key, el);
 		}

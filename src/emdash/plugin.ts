@@ -16,7 +16,7 @@
  *   tag keeps `type="application/json"`; the config text has `<`, `>` and `&` escaped, so it holds no `</`.
  */
 import type { PageFragmentContribution, PluginContext, PluginDefinition, PluginRoute } from "emdash";
-import { after as emdashAfter, getI18nConfig, getRequestContext as emdashRequestContext, PluginRouteError, pluginResponse } from "emdash";
+import { after as emdashAfter, getAllTermsForEntries as emdashTerms, getI18nConfig, getRequestContext as emdashRequestContext, PluginRouteError, pluginResponse } from "emdash";
 import { runIfDue, startRebuild } from "./core/build.ts";
 import type { CollectionInfo, ContentPort, EmDashEntry, PluginOptions, RouteHandler, RouteMethod, RouteName, RouteRequest, RunReason, SearchPorts, UrlLocale, UrlRules } from "./core/ports.ts";
 import { CONTENT_EVENTS, markDirty, onContentEvent, type ContentEventPayload } from "./core/refresh.ts";
@@ -26,7 +26,7 @@ import { configJson, readSettings } from "./core/settings.ts";
 /** The plugin id; it shows in the route URLs (`/_emdash/api/plugins/astronomic-search/...`). */
 export const PLUGIN_ID = "astronomic-search";
 /** The package version; the boot's `?ver=` changes with it. A unit test keeps it equal to package.json. */
-export const VERSION = "0.2.1";
+export const VERSION = "0.2.2";
 export const CAPABILITIES = ["content:read", "schema:read", "hooks.page-fragments:register"] as const;
 export const ADMIN_ENTRY = "@astronomic-dev/search/emdash/admin";
 export const ADMIN_PAGES = [{ path: "/settings", label: "Search", icon: "magnifying-glass" }];
@@ -51,9 +51,11 @@ const LIST_LIMIT = 100;
 export interface WrapperDeps {
 	after(fn: () => Promise<void>): void;
 	getRequestContext(): { editMode?: boolean; preview?: unknown } | undefined;
+	/** EmDash's batch read of terms; it opens the database itself, in a request, in cron and in `after()`. */
+	getAllTermsForEntries(collection: string, ids: string[], options: { locale: string }): Promise<Map<string, Record<string, Array<{ label: string }>>>>;
 }
 
-const defaultDeps: WrapperDeps = { after: emdashAfter, getRequestContext: emdashRequestContext };
+const defaultDeps: WrapperDeps = { after: emdashAfter, getRequestContext: emdashRequestContext, getAllTermsForEntries: emdashTerms };
 
 /** The embed boot and the config tag (plan decision 10). */
 export function pageFragments(config: string, filesPath = DEFAULT_FILES_PATH, version = VERSION): PageFragmentContribution[] {
@@ -138,7 +140,15 @@ export function portsFrom(ctx: PluginContext, deps: WrapperDeps): SearchPorts {
 					routable: c.routable,
 					hidden: c.hidden,
 					urlPattern: c.urlPattern,
+					fields: c.fields.map((f) => f.slug),
 				}));
+			},
+		},
+		terms: {
+			// Not `ctx.taxonomies`: in EmDash 1.4 that is one query or more per entry.
+			async labels(collection, ids, locale) {
+				const found = await deps.getAllTermsForEntries(collection, [...ids], { locale });
+				return new Map([...found].map(([id, terms]) => [id, Object.fromEntries(Object.entries(terms).map(([name, list]) => [name, list.map((t) => t.label)]))]));
 			},
 		},
 		log: ctx.log,

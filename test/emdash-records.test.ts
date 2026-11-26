@@ -5,7 +5,9 @@ import type { PageRecord, SearchRecord } from "../src/core/types.ts";
 import { pickLocale } from "../src/controller/load.ts";
 import { SCHEMA, type Manifest } from "../src/core/types.ts";
 import type { PluginOptions, UrlRules } from "../src/emdash/core/ports.ts";
-import { collectRecords, indexLocale, keywordList, portableTextToPlain, searchCollections } from "../src/emdash/core/records.ts";
+import { portableTextToPlain } from "../src/emdash/core/entry-text.ts";
+import { checkExclude, indexLocale } from "../src/emdash/core/paths.ts";
+import { collectRecords, keywordList, searchCollections } from "../src/emdash/core/records.ts";
 import { collection, createFakeContent, entry, portableText, type FakeContentInput } from "./emdash/fake-content.ts";
 
 const collect = (input: FakeContentInput, options: PluginOptions = {}) => {
@@ -228,4 +230,132 @@ test("plain locales keep their own keys", () => {
 	assert.equal(indexLocale("de", urlRules), "de");
 	assert.equal(indexLocale("fr", undefined), "fr");
 	assert.equal(indexLocale("fr", { siteLocale: "en", i18n: null }), "fr");
+});
+
+// ---------------------------------------------------------------------------
+// exclude
+// ---------------------------------------------------------------------------
+
+const shownUrls = async (input: FakeContentInput, exclude: string[]) => all((await collect(input, { exclude })).byLocale).map((r) => r.url);
+const NO_I18N: UrlRules = { siteLocale: "en", i18n: null };
+const ROOT_PAGES = collection("pages", { urlPattern: "/{slug}" });
+
+test("exclude leaves out exact paths and one-segment wildcards; not counted as skipped, no warning", async () => {
+	const out = await collect(
+		{
+			collections: [ROOT_PAGES, collection("projects")],
+			entries: [entry("pages", "speaking"), entry("pages", "about"), entry("projects", "one"), entry("projects", "two"), entry("projects", null)],
+			urlRules: NO_I18N,
+		},
+		{ exclude: ["/speaking", "/projects/*"] },
+	);
+	assert.deepEqual(all(out.byLocale).map((r) => r.url), ["/about"]);
+	assert.equal(out.skipped, 1, "only the entry with no slug");
+	assert.deepEqual(out.warnings, []);
+	assert.deepEqual(out.types, { pages: { label: "Pages" }, projects: { label: "Projects" } });
+});
+
+test("exclude: a wildcard is one whole segment, and an empty list leaves nothing out", async () => {
+	const input = {
+		collections: [collection("docs", { urlPattern: "/docs/{slug}" }), collection("parts", { urlPattern: "/docs/parts/{slug}" }), ROOT_PAGES],
+		entries: [entry("docs", "a"), entry("parts", "b"), entry("pages", "docs"), entry("pages", "docs-old")],
+		urlRules: NO_I18N,
+	};
+	assert.deepEqual(await shownUrls(input, ["/docs/*"]), ["/docs/parts/b", "/docs", "/docs-old"]);
+	assert.deepEqual(await shownUrls(input, ["/docs"]), ["/docs/a", "/docs/parts/b", "/docs-old"]);
+	assert.equal((await shownUrls(input, [])).length, 4);
+});
+
+test("exclude: a trailing slash makes no difference, on the pattern or on the site", async () => {
+	for (const trailingSlash of ["always", "never", "ignore"] as const) {
+		for (const exclude of ["/speaking", "/speaking/"]) {
+			const shown = await shownUrls({ collections: [ROOT_PAGES], entries: [entry("pages", "speaking"), entry("pages", "about")], urlRules: { ...NO_I18N, trailingSlash } }, [exclude]);
+			assert.deepEqual(shown, [trailingSlash === "always" ? "/about/" : "/about"], `${trailingSlash} ${exclude}`);
+		}
+	}
+});
+
+test("exclude: an encoded slug matches the pattern typed plain or encoded, in either hex case", async () => {
+	const input = {
+		collections: [collection("posts", { urlPattern: "/días/{slug}" })],
+		entries: [entry("posts", "café"), entry("posts", "a/b"), entry("posts", "100%")],
+		urlRules: NO_I18N,
+	};
+	for (const p of ["/días/café", "/d%C3%ADas/caf%c3%a9"]) assert.deepEqual(await shownUrls(input, [p]), ["/días/a%2Fb", "/días/100%25"], p);
+	// An encoded slash stays inside its segment.
+	assert.deepEqual(await shownUrls(input, ["/días/a/b"]), ["/días/caf%C3%A9", "/días/a%2Fb", "/días/100%25"]);
+	assert.deepEqual(await shownUrls(input, ["/días/a%2fb"]), ["/días/caf%C3%A9", "/días/100%25"]);
+	// A pattern that is not valid percent-encoding is read as typed.
+	assert.deepEqual(await shownUrls(input, ["/días/100%"]), ["/días/caf%C3%A9", "/días/a%2Fb"]);
+	assert.deepEqual(await shownUrls(input, ["/días/*"]), []);
+});
+
+test("exclude: a pattern with no locale prefix works in every locale; one with a prefix, in that locale", async () => {
+	const i18n = { defaultLocale: "en", locales: ["en", "fr", { path: "portugues", codes: ["pt-BR"] }] };
+	const input = (prefixDefaultLocale = false): FakeContentInput => ({
+		collections: [ROOT_PAGES],
+		entries: ["en", "fr", "portugues"].flatMap((locale) => [entry("pages", "speaking", { locale }), entry("pages", "about", { locale })]),
+		urlRules: { siteLocale: "en", i18n: { ...i18n, prefixDefaultLocale } },
+	});
+	assert.deepEqual(await shownUrls(input(), ["/speaking"]), ["/about", "/fr/about", "/portugues/about"]);
+	assert.deepEqual(await shownUrls(input(true), ["/speaking/"]), ["/en/about", "/fr/about", "/portugues/about"]);
+	assert.deepEqual(await shownUrls(input(), ["/fr/speaking"]), ["/speaking", "/about", "/fr/about", "/portugues/speaking", "/portugues/about"]);
+	assert.deepEqual(await shownUrls(input(), ["/portugues/*"]), ["/speaking", "/about", "/fr/speaking", "/fr/about"]);
+	assert.deepEqual(await shownUrls(input(true), ["/en/speaking"]), ["/en/about", "/fr/speaking", "/fr/about", "/portugues/speaking", "/portugues/about"]);
+});
+
+test("exclude: a * never stands for a locale prefix, so a pattern reads the same in every locale", async () => {
+	const input: FakeContentInput = {
+		collections: [collection("home", { urlPattern: "/" }), ROOT_PAGES, collection("posts")],
+		entries: ["en", "fr"].flatMap((locale) => [entry("home", "home", { locale }), entry("pages", "about", { locale }), entry("posts", "hi", { locale })]),
+		urlRules: { siteLocale: "en", i18n: { defaultLocale: "en", locales: ["en", "fr"] } },
+	};
+	const shown = async (pattern: string) => (await shownUrls(input, [pattern])).sort();
+	assert.deepEqual(await shown("/"), ["/about", "/fr/about", "/fr/posts/hi", "/posts/hi"]);
+	assert.deepEqual(await shown("/fr"), ["/", "/about", "/fr/about", "/fr/posts/hi", "/posts/hi"]);
+	assert.deepEqual(await shown("/*"), ["/", "/fr", "/fr/posts/hi", "/posts/hi"]);
+	assert.deepEqual(await shown("/*/*"), ["/", "/about", "/fr", "/fr/about"]);
+});
+
+test("exclude: a pattern that starts with any locale's prefix matches only that locale's whole paths", async () => {
+	const input = (prefixDefaultLocale = false): FakeContentInput => ({
+		collections: [ROOT_PAGES, collection("trips", { urlPattern: "/fr/{slug}" })],
+		entries: ["en", "fr", "de"].flatMap((locale) => [entry("pages", "speaking", { locale }), entry("trips", "speaking", { locale })]),
+		urlRules: { siteLocale: "en", i18n: { defaultLocale: "en", locales: ["en", "fr", "de"], prefixDefaultLocale } },
+	});
+	const shown = async (pattern: string, prefixDefaultLocale = false) => (await shownUrls(input(prefixDefaultLocale), [pattern])).sort();
+	// The default locale's own "/fr/speaking" is the same path as the French page; the locale wins, so only French is out.
+	assert.deepEqual(await shown("/fr/speaking"), ["/de/fr/speaking", "/de/speaking", "/fr/fr/speaking", "/fr/speaking", "/speaking"]);
+	assert.deepEqual(await shown("/fr/speaking", true), ["/de/fr/speaking", "/de/speaking", "/en/fr/speaking", "/en/speaking", "/fr/fr/speaking"]);
+	assert.deepEqual(await shown("/fr/*", true), ["/de/fr/speaking", "/de/speaking", "/en/fr/speaking", "/en/speaking", "/fr/fr/speaking"]);
+	assert.deepEqual(await shown("/fr/fr/speaking", true), ["/de/fr/speaking", "/de/speaking", "/en/fr/speaking", "/en/speaking", "/fr/speaking"]);
+	// The default locale has no prefix here, so "/en" is a plain segment.
+	assert.equal((await shown("/en/speaking")).length, 6);
+});
+
+test("exclude: an encoded or literal asterisk is not a wildcard", async () => {
+	const input = { collections: [collection("posts")], entries: [entry("posts", "*"), entry("posts", "a"), entry("posts", "a*")], urlRules: NO_I18N };
+	for (const p of ["/posts/%2A", "/posts/%2a"]) assert.deepEqual(await shownUrls(input, [p]), ["/posts/a", "/posts/a*"], p);
+	for (const p of ["/posts/a*", "/posts/a%2A"]) assert.deepEqual(await shownUrls(input, [p]), ["/posts/*", "/posts/a"], p);
+	assert.deepEqual(await shownUrls(input, ["/posts/*"]), []);
+});
+
+test("exclude: a page whose own first segment looks like a locale is not cut on a site with no i18n", async () => {
+	const input = { collections: [collection("fr", { urlPattern: "/fr/{slug}" })], entries: [entry("fr", "speaking", { locale: "fr" })], urlRules: NO_I18N };
+	assert.deepEqual(await shownUrls(input, ["/speaking"]), ["/fr/speaking"]);
+	assert.deepEqual(await shownUrls(input, ["/fr/speaking"]), []);
+});
+
+test("exclude: with no URL rules, the pattern matches the whole public path", async () => {
+	const a = entry("posts", "a");
+	const input = { collections: [collection("posts")], entries: [a, entry("posts", "b")], paths: { [a.id]: "/fr/posts/a/" } };
+	assert.deepEqual(await shownUrls(input, ["/fr/posts/a", "/posts/b"]), []);
+});
+
+test("checkExclude takes a list of paths and throws on anything else", () => {
+	checkExclude([]);
+	checkExclude(["/", "/speaking", "/projects/*", "/café", "/\u{1f600}", "/100%", "/a%3Fb"]);
+	for (const bad of ["/speaking", {}, null, 3, ["speaking"], [""], [" /speaking"], ["/ok", 3], ["/ok", null], ["https://example.com/speaking"], ["//example.com/speaking"], ["//"], ["/speaking?x=1"], ["/speaking#top"], ["/a\ud800"], ["/\udc00b"]]) {
+		assert.throws(() => checkExclude(bad), /search\(\): exclude must be a list of site paths.*"\/speaking"/, JSON.stringify(bad));
+	}
 });

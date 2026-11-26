@@ -116,6 +116,18 @@ const typesOf = (root: Element) =>
 		.map((t) => t.trim())
 		.filter(Boolean);
 
+/**
+ * Focus after Retry or "Search all types", which take their own button away: the page's field when it takes focus (a
+ * host can hide it), else the results area, but only when the action displaced focus. `had` is what had focus in the
+ * page before it. Focus on another control, such as a host's own form, stays there. The area does not scroll to its top:
+ * the button was in it, so it is on screen.
+ */
+export function refocus(shadow: Pick<ShadowRoot, "activeElement" | "ownerDocument">, input: HTMLElement, area: HTMLElement, had: Element | null): void {
+	input.focus();
+	const { activeElement, body } = shadow.ownerDocument;
+	if (had && !shadow.activeElement && (!activeElement || activeElement === body)) area.focus({ preventScroll: true });
+}
+
 type EntryState = Record<string, unknown> | null;
 const withKey = (state: unknown, on: boolean): Record<string, unknown> => ({ ...(state && typeof state === "object" ? (state as object) : {}), [KEY]: on });
 /**
@@ -342,14 +354,15 @@ export function mountResultsPage(root: HTMLElement, config: ResultsConfig): () =
 		if (e.type !== "click") return;
 		const target = el?.closest?.("[data-action]");
 		if (!target || !shell.root.contains(target)) return;
+		const had = shadow!.activeElement;
 		switch (target.getAttribute("data-action")) {
 			case "retry":
 				c.retry();
-				shell.input.focus();
+				refocus(shadow!, shell.input, shell.area, had);
 				break;
 			case "all-types":
 				c.searchAllTypes();
-				shell.input.focus();
+				refocus(shadow!, shell.input, shell.area, had);
 				break;
 			case "facet":
 				c.togglePick(target.getAttribute("data-facet") ?? "", target.getAttribute("data-value") ?? "");

@@ -8,6 +8,7 @@ import { DOCUMENT_NODE, ELEMENT_NODE, parse, type Node } from "ultrahtml";
 import { querySelectorAll } from "ultrahtml/selector";
 import type { SearchRecord, SourcedRecord } from "../core/types.ts";
 import { buildLocale } from "../core/locale.ts";
+import { matchPath } from "../core/match-path.ts";
 import { squash } from "../core/text.ts";
 import { cleanUrl, type UrlOptions } from "../core/url.ts";
 import { find as findShown, htmlSections, textOf } from "./sections.ts";
@@ -42,17 +43,6 @@ const ALWAYS_OUT = ["/404", "/500"];
 export function html(options: HtmlOptions = {}): HtmlSource {
 	for (const key of Object.keys(options)) if (!KEYS.has(key)) throw new Error(`Search: html() has no setting "${key}" (known: ${[...KEYS].join(", ")})`);
 	return { kind: "html", ...options };
-}
-
-const trim = (p: string) => (p.length > 1 ? p.replace(/\/+$/, "") : p);
-
-/** Whether a site path (no base) matches one of the patterns: an exact path, where a "*" segment is any one segment. */
-export function matchPath(path: string, patterns: string[]): boolean {
-	const p = trim(path).split("/");
-	return patterns.some((pattern) => {
-		const q = trim(pattern).split("/");
-		return q.length === p.length && q.every((s, i) => (s === "*" ? p[i] !== "" : s === p[i]));
-	});
 }
 
 // ultrahtml 1.7.0 ends a tag at the first ">", even inside a quoted attribute value (Tailwind classes such as

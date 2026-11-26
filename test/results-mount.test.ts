@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { Prefetch } from "../src/controller/prefetch.ts";
 import { historyStep, isPrettyEntry, pageQuery, startPicks } from "../src/page/history.ts";
-import { allowedType, effectiveIndex, labelIds, prefetchFor } from "../src/results/mount.ts";
+import { allowedType, effectiveIndex, labelIds, prefetchFor, refocus } from "../src/results/mount.ts";
 
 const wp = { query: "s", prefix: "z_" };
 
@@ -81,4 +81,30 @@ test("the page's label ids: names that differ get different ids, even when one l
 	assert.notEqual(idFor("facet:a b"), idFor("facet:a-b"));
 	assert.equal(idFor("facet:a b"), idFor("facet:a b"));
 	assert.notEqual(labelIds(2)("facet:a b"), idFor("facet:a b"));
+});
+
+/** A stand-in shadow root: `canFocus` is whether the input takes focus, `inside` and `outside` what has it now. */
+function focusCase(o: { canFocus: boolean; had: boolean; inside?: boolean; outside?: boolean }): string {
+	const body = { name: "body" };
+	const button = { name: "button" };
+	const doc = { body, activeElement: o.outside ? { name: "outside" } : body } as { body: object; activeElement: object | null };
+	const shadow = { ownerDocument: doc, activeElement: o.inside ? button : null } as { ownerDocument: typeof doc; activeElement: object | null };
+	let went = "";
+	const input = { focus: () => void (o.canFocus && ((went = "input"), (shadow.activeElement = input))) };
+	const panel = { focus: () => void (went = "panel") };
+	refocus(shadow as unknown as ShadowRoot, input as unknown as HTMLElement, panel as unknown as HTMLElement, (o.had ? button : null) as unknown as Element | null);
+	return went;
+}
+
+test("focus after Retry or Search all types: the field when it takes focus; else the panel, only if the action displaced focus", () => {
+	assert.equal(focusCase({ canFocus: true, had: true }), "input");
+	assert.equal(focusCase({ canFocus: true, had: false, outside: true }), "input");
+	// The field is hidden and the button that had focus is gone.
+	assert.equal(focusCase({ canFocus: false, had: true }), "panel");
+	// Nothing in the page had focus, so the action displaced none.
+	assert.equal(focusCase({ canFocus: false, had: false }), "");
+	// The button is still there with focus, or focus is on another control (a host's own form).
+	assert.equal(focusCase({ canFocus: false, had: true, inside: true }), "");
+	assert.equal(focusCase({ canFocus: false, had: true, outside: true }), "");
+	assert.equal(focusCase({ canFocus: false, had: false, outside: true }), "");
 });

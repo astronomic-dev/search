@@ -36,3 +36,18 @@ test("a record's fields follow its kind", () => {
 	if (heading.kind === "heading") assert.equal(heading.heading.length, 1);
 	assert.ok(page && action && noHeading && pageHeading && pageCommand);
 });
+
+test("the boot's touch helper: a view's show returns a field or null, and openTouch is optional", async () => {
+	const { touchOpens } = await import("../src/browser/start.ts");
+	type Boot = import("../src/browser/start.ts").BootApp;
+	type View = import("../src/browser/start.ts").TouchView;
+	const view: View = { show: () => null };
+	// @ts-expect-error show returns the field, or null
+	const wrong: View = { show: () => undefined };
+	const plain: Boot = { prepare: () => {} };
+	const app: Boot = { prepare: () => {}, openTouch: (_t, d) => d.changed && d.value.length > 0 && d.start === d.end };
+	// @ts-expect-error openTouch says if the input took the focus
+	const silent: Boot = { prepare: () => {}, openTouch: () => {} };
+	assert.equal(typeof touchOpens, "function");
+	assert.ok(view && wrong && plain && app && silent);
+});

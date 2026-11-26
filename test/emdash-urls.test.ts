@@ -16,7 +16,8 @@ import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { CollectionInfo, EmDashEntry } from "../src/emdash/core/ports.ts";
-import { collectRecords, entryPath } from "../src/emdash/core/records.ts";
+import { entryPath } from "../src/emdash/core/paths.ts";
+import { collectRecords } from "../src/emdash/core/records.ts";
 import { urlRulesFrom } from "../src/emdash/plugin.ts";
 import { collection, createFakeContent, entry } from "./emdash/fake-content.ts";
 

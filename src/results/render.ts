@@ -52,6 +52,8 @@ export interface PageShell {
 	typeRow: HTMLElement;
 	tablist: HTMLElement;
 	facets: HTMLElement;
+	/** The results area: a named group around the panel, which a script can focus (the panel's role comes and goes with the tabs). */
+	area: HTMLElement;
 	panel: HTMLElement;
 	count: HTMLElement;
 	list: HTMLElement;
@@ -141,9 +143,11 @@ export function renderPage(doc: Document, ctx: PageContext): PageShell {
 	const message = h(doc, "div", { part: "message" });
 	const more = button(doc, { part: "more", hidden: "" }, words.showMore) as HTMLButtonElement;
 	const panel = h(doc, "div", { part: "panel" }, count, list, message, h(doc, "div", { class: "more-row" }, more));
+	// Its name is the count's own word with no number ("results"), so it is in the site's language.
+	const area = h(doc, "div", { part: "area", role: "group", tabindex: "-1", "aria-label": fill(strings.results.other, { count: "" }).trim() }, panel);
 	const live = h(doc, "div", { part: "status", role: "status", "aria-live": "polite", class: "visually-hidden" });
-	const root = h(doc, "search", { role: "search", part: "page" }, h(doc, "div", { part: "head" }, form, typeRow, facets), panel, live);
-	return { root, form, input, submit, typeRow, tablist, facets, panel, count, list, message, more, live };
+	const root = h(doc, "search", { role: "search", part: "page" }, h(doc, "div", { part: "head" }, form, typeRow, facets), area, live);
+	return { root, form, input, submit, typeRow, tablist, facets, area, panel, count, list, message, more, live };
 }
 
 function setLink(a: HTMLElement, record: SearchRecord, position: number): void {

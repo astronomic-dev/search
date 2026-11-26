@@ -17,7 +17,7 @@
  *   so they set `builtGen` and wait for the next change, the nightly run or Rebuild now. `deadline` and
  *   `error` stay due and the next tick retries. `no-collections` on a site never built retries by itself once a
  *   collection opts in (`retryDue`; a template's seed adds its collections without content hooks).
- * - The index holds paths only (`entryPath` in records.ts builds them from the listed rows), so a build needs no
+ * - The index holds paths only (`entryPath` in paths.ts builds them from the listed rows), so a build needs no
  *   site URL. EmDash's site URL, when set, is kept on the index only for the admin's "Built for" line.
  * - The lease is taken by one `compareAndSet` on the `state` revision the due check read (`takeLease` with `read`):
  *   a run that another worker overtook (it built and published meanwhile) reads `state` again and decides again,
@@ -30,8 +30,9 @@ import { DEFAULT_BUDGET_KB, checkClip, indexSettings, type IndexShape } from "..
 import { DEFAULT_WEIGHTS, minisearchEngine } from "../../core/minisearch.ts";
 import { capKeywords } from "../../core/schema.ts";
 import type { EngineFactory, SearchRecord } from "../../core/types.ts";
+import { indexDefaultLocale } from "./paths.ts";
 import type { ActiveIndex, BuildErrorCode, BuildResult, LocaleIndex, PluginOptions, RunReason, SearchPorts, SearchState } from "./ports.ts";
-import { collectRecords, indexDefaultLocale, searchCollections } from "./records.ts";
+import { collectRecords, searchCollections } from "./records.ts";
 import { markDirty, markForce, isDue } from "./refresh.ts";
 import { MAX_INDEX_BYTES, chunkCounts, cleanUp, deleteChunks, planChunks, publish, readState, retireLease, splitChunks, takeLease, updateState, writeChunks } from "./store.ts";
 

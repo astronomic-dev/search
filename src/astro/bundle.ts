@@ -9,7 +9,7 @@
  */
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import type { StringsInput } from "../controller/strings.ts";
+import { mergeStrings, type StringsInput } from "../controller/strings.ts";
 import { hash10, searchDir, type BrowseLink } from "./build.ts";
 
 /** The extension of this package's own files: ".ts" from src/ (the repo and its tests), ".js" from dist/ (an install). */
@@ -43,6 +43,8 @@ export interface BundleOptions {
 	strings: StringsInput;
 	browse: BrowseLink[];
 	theme?: "light" | "dark";
+	/** The site's search page (searchPageUrl): a touch open that fails takes the typed text there as `q`. */
+	searchPage?: string;
 }
 
 /** The manifest's name never changes (it is what names the hashed files); every other file is hashed. */
@@ -79,6 +81,6 @@ export async function bundleScripts(options: BundleOptions): Promise<Bundle> {
 	};
 	const [appRaw, bootRaw] = await Promise.all([raw("app"), raw("boot")]);
 	const app = script("app", fill(appRaw, { manifest, index: options.index, strings: options.strings, browse: options.browse, theme: options.theme }));
-	const boot = script("boot", fill(bootRaw, { app: app.url, manifest, index: options.index, shortcut: options.shortcut }));
+	const boot = script("boot", fill(bootRaw, { app: app.url, manifest, index: options.index, shortcut: options.shortcut, placeholder: mergeStrings(options.strings).placeholder, search: options.searchPage, theme: options.theme }));
 	return { boot, app, manifest };
 }

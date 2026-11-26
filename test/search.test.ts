@@ -318,3 +318,11 @@ test("linked: an action with no URL is left out before the page-level AND, so a 
 	assert.deepEqual(items(r).map((i) => i.page.id), ["en:/colors"]);
 	assert.equal(r.total, 1);
 });
+
+test("a short word being typed narrows the pages instead of hiding them", () => {
+	const recs = [page("install", "docs", "Install", "Run the installer on a theme."), page("other", "docs", "Other", "Install notes.")];
+	const s2 = createSearch(minisearchEngine.load(minisearchEngine.build("site", "en", recs, settings)), settings);
+	assert.equal(s2.run({ q: "th", group: false }).total, 1);
+	assert.deepEqual(ids(s2.run({ q: "install th", group: false })), ["en:/install"]);
+	assert.equal(s2.run({ q: "qz", group: false }).total, 0);
+});

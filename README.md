@@ -179,6 +179,28 @@ The core (`@astronomic-dev/search/core`) holds the record types, the engine and 
 
 A dialog of your own still gets the lazy load: call `startBoot({ selector, keys, load })` from `@astronomic-dev/search/boot` in your button's script. It listens for hover, focus, a click and the shortcut, calls `load()` on first use (your app, through `import()`), calls the app's `prepare(trigger, keys)`, then replays the held click or key; if the load fails, a held click follows the link. To fetch the index while your app loads, pass `preload(trigger)` as well: call `prefetch({ index, lang, manifestUrl, fetch })` from `@astronomic-dev/search/controller` there, and hand what it returns to your app's `loadSearcher` as `prefetch`. `loadSearcher` uses it once, and only for the same index and manifest URL. Give your buttons `data-search-ui="yours"` and pass `selector: '[data-search-trigger][data-search-ui="yours"]'`: the default dialog's boot and app skip any trigger with a `data-search-ui`, so the two never take each other's buttons. Use one kind of dialog per page. The integration's settings reach your code through `virtual:astronomic-search/assets`, which exports `{ boot, app, manifest, index, shortcut, browse, strings }` (`strings` holds the `strings` setting's overrides only); for its types, add `/// <reference types="@astronomic-dev/search/astro/virtual" />` to the file that imports it.
 
+On a phone, a dialog that opens after the tap gets no keyboard: iOS opens it only for a focus made inside the tap. For that, pass `touch: touchOpens(view)`, also from `@astronomic-dev/search/boot`. On a tap, `view.show(trigger)` makes and mounts a stand-in box that looks like your dialog's search field, and returns `{ host, input }` (not focused yet, with the text your dialog opens on), or `null` for an ordinary open. The helper focuses it inside the tap, and once your app is in and the box has held focus 150 ms, it calls your app's `openTouch(trigger, draft)`. That opens the dialog, focuses its input, puts in `draft.value` (`draft.changed` says if it differs from the start text) and the caret (`draft.start`, `draft.end`, `draft.direction`), and returns `true` when the input took the focus (on `false` the helper does nothing more, since your dialog may be open already). An app with no `openTouch` gets a click on the trigger instead, and the text typed in the box is lost. The helper also handles Escape and focus leaving the box (the open is dropped), a client router's page swap, an unfinished input method composition (it waits for it to end), and a failed load: the link is followed, and if `show` also returned `searchPage` (your search page's URL) and the link goes there (the same origin and path), the typed text goes along as `q`; a trigger with its own `data-search-href` keeps its link as it is. It adds about 0.7 KB gzip to your boot script, and none of the default dialog's stand-in. A boot without `touch` does not grow.
+
+```ts
+import { startBoot, touchOpens } from "@astronomic-dev/search/boot";
+
+startBoot({
+	selector: '[data-search-trigger][data-search-ui="yours"]',
+	keys: ["mod+k"],
+	touch: touchOpens({
+		show(trigger) {
+			const host = document.createElement("div");
+			host.className = "my-search-stand-in";
+			const input = host.appendChild(document.createElement("input"));
+			input.setAttribute("aria-label", "Search");
+			document.body.append(host);
+			return { host, input, searchPage: "/search" };
+		},
+	}),
+	load: () => import("./my-search-app.ts"), // exports prepare(trigger, keys) and openTouch(trigger, draft)
+});
+```
+
 For a worked example, see the Search family in [`@astronomic-dev/ui`](https://astronomic.dev/ui): the shell [`Search.astro`](https://github.com/astronomic-dev/astronomic-ui/blob/main/src/components/Search.astro) (its markup, templates and boot script), the glue [`lib/search-app.ts`](https://github.com/astronomic-dev/astronomic-ui/blob/main/src/lib/search-app.ts) on `controller` and `dom`, and the [`SearchClassic`](https://github.com/astronomic-dev/astronomic-ui/blob/main/src/components/SearchClassic.astro) recipe, which sets only class hooks.
 
 ## The dialog element
@@ -246,13 +268,13 @@ const root = document.documentElement;
 
 function sync() {
 	const dark = root.dataset.theme === "dark" || root.classList.contains("dark");
-	for (const el of document.querySelectorAll("astronomic-search")) el.setAttribute("theme", dark ? "dark" : "light");
+	for (const el of document.querySelectorAll("astronomic-search, [data-search-proxy]")) el.setAttribute("theme", dark ? "dark" : "light");
 }
 
 const observer = new MutationObserver(sync);
 // The toggle.
 observer.observe(root, { attributes: true, attributeFilter: ["data-theme", "class"] });
-// The dialog, which joins the page on first use.
+// The dialog, which joins the page on first use, and its stand-in on a phone.
 observer.observe(document, { childList: true, subtree: true });
 // A dialog already on the page.
 sync();
@@ -271,7 +293,8 @@ It also sets a dialog that is made later, and it keeps working with Astro's `<Cl
 If your colors are already custom properties that your toggle changes, you can point the dialog's [custom properties](#custom-properties) at them instead, with no script. Use your own names for the ones on the right:
 
 ```css
-astronomic-search {
+astronomic-search,
+[data-search-proxy] {
 	--search-bg: var(--page);
 	--search-fg: var(--ink);
 	--search-muted: var(--ink-soft);
@@ -289,7 +312,7 @@ astronomic-search {
 
 ### Custom properties
 
-Set these on `astronomic-search` or any ancestor. Each has a light default and a dark one.
+Set these on `astronomic-search` or any ancestor. Each has a light default and a dark one. If you set them on `astronomic-search` itself, name `[data-search-proxy]` in the same rule: it is the box that stands in for the dialog on a phone (see [Keyboard](#keyboard)).
 
 | Property | Default (light) | Use |
 | --- | --- | --- |
@@ -395,6 +418,8 @@ On EmDash, the admin page sets only `placeholder` (Search box text); every other
 - Escape clears the box, then closes the dialog. Focus returns to the button that opened it.
 - Tab moves to the type tabs (Left and Right switch them), the filters, and "See all results".
 - Nothing runs while an input method is still composing text.
+
+On a touch screen, a tap on a `SearchLink` button first shows a small box that looks like the dialog's (`[data-search-proxy]`, with the same `--search-*` custom properties and `theme`), as iOS opens its keyboard only for a field focused inside the tap. When the dialog is ready, and at least 150 ms later, the text and caret move to it.
 
 Set `shortcut: false` to turn the shortcut off, or `shortcut: { keys: ["mod+k"] }` to keep only one.
 
@@ -633,6 +658,9 @@ Options (in code only, and plain JSON only, because EmDash passes them to the pl
 | `collections` | every collection with search support that is routable and not hidden | The collection slugs to index. A listed collection that is not routable is skipped with a build warning. |
 | `budget` | `{ gzipKB: 300 }` | The size warning for each locale's index, gzipped. |
 | `clip` | whole text | Characters of each entry's text the index keeps. |
+| `exclude` | none | Site paths to leave out of search, such as a page the theme has turned off: `["/speaking", "/projects/*"]`. A `*` is any one segment. See [Leave pages out](#leave-pages-out). |
+| `listPages` | none | Pages that list whole collections, such as a talks page or a FAQ, so a search for an item finds the page. See [List pages](#list-pages). |
+| `taxonomyKeywords` | none | Taxonomies whose term labels are keywords of their entries: `["category", "tag"]`. See [Categories and tags](#categories-and-tags). |
 | `filesPath` | `/_search/embed/` | Where the site serves the embed. Must match `searchFiles({ path })`. |
 
 **Check the layout.** The plugin's two tags print only where your layout renders `<EmDashHead>` and `<EmDashBodyEnd page={page} />`. Most EmDash themes do, but a hand-made layout may not. To check: open a public page, view its source, and look for `data-search-config` near the end of `<body>`. If it is not there, add `<EmDashBodyEnd page={page} />` before `</body>`.
@@ -647,7 +675,7 @@ The first build runs by itself within a minute of install. If no collection has 
 
 On Cloudflare, the plugin needs the Workers Paid plan. Node hosting has no such limit.
 
-A rebuild runs inside the Worker, and the Free plan allows 50 D1 queries and 10 ms of CPU per run. A build makes about 8.5 D1 queries per 100 pages (39 for a 42-page site, 89 for 1,042 pages), so the Paid plan's 1,000 queries per run fit about 11,000 pages. When a build hits a plan limit, the old index stays and the admin page says so.
+A rebuild runs inside the Worker, and the Free plan allows 50 D1 queries and 10 ms of CPU per run. A build makes about 8.5 D1 queries per 100 pages (39 for a 42-page site, 89 for 1,042 pages), so the Paid plan's 1,000 queries per run fit about 11,000 pages. With `taxonomyKeywords` it is about 2 more per 100 entries. When a build hits a plan limit, the old index stays and the admin page says so.
 
 The rebuild runs on EmDash's cron, so the Worker needs EmDash's Worker entry and a Cron Trigger every minute. Without both, no first build runs and no change is picked up.
 
@@ -707,9 +735,69 @@ The admin page shows why the last build failed, and the old index stays live. On
 ### What is indexed
 
 - One record per published entry in the indexed collections, one index per locale. The URL comes from EmDash itself, so URL patterns, locale paths and trailing slashes match the site.
-- The text is the plain text of the content, then the excerpt, summary, description and SEO description. A `search_keywords` field (a list or a comma list) adds keywords. EmDash field slugs are lowercase, so name it that way.
-- Skipped: drafts, scheduled entries until they publish, entries with `seo.noIndex` on, and entries with no public URL.
+- The text is the plain text of the content, then the excerpt, summary, description and SEO description. A `search_keywords` field (a list or a comma list) adds keywords, and so do the terms in [`taxonomyKeywords`](#categories-and-tags). EmDash field slugs are lowercase, so name it that way.
+- Pages in `listPages` also have the words of the entries they list. See [List pages](#list-pages).
+- Skipped: drafts, scheduled entries until they publish, entries with `seo.noIndex` on, entries with no public URL, and paths in `exclude`.
 - No heading records yet: EmDash's renderer prints no heading ids, so a result links to the page, not a section. Heading text is still searched.
+
+### Leave pages out
+
+Use `exclude` for an entry that is published but has no page: a theme can turn a page off in its code, while the entry that words it stays published, and a result for it would be a 404.
+
+```js
+search({ exclude: ["/speaking", "/projects/*"] });
+```
+
+- A path is exact. A `*` is any one segment: `/projects/*` leaves out every project, but not `/projects` itself.
+- Write site paths, starting with `/`, with no base (a value that is not a list of these throws). A trailing slash makes no difference. Letters can be plain or encoded (`/café` or `/caf%C3%A9`).
+- A path with no locale prefix is left out in every locale: `/speaking` also leaves out `/fr/speaking`. To leave a page out in one locale only, write its prefix: `/fr/speaking`. A first segment that is a locale's prefix always means the locale, even if a page has the same slug. A `*` never stands for the prefix.
+- A change to an option (`exclude`, `collections`, `clip`, `listPages`, `taxonomyKeywords`) is in your code, so EmDash sends no content event for it. It shows after the next build: click Rebuild now after you deploy, or wait for the next content change or the nightly build.
+- `exclude` covers this index only. EmDash's own search, which the theme's server list uses, still finds the entry.
+
+### List pages
+
+Use `listPages` for a page whose route shows a whole collection with no page per entry, such as talks, a FAQ or price plans. The words of the entries go to the end of the page's text, so a search for an item finds the page that lists it.
+
+```js
+search({
+	listPages: [
+		{
+			path: "/speaking",
+			from: [{ collection: "talks", fields: ["title", "event", "summary"] }],
+			fallback: { title: "Speaking", text: "Talks and workshops." },
+		},
+	],
+});
+```
+
+| Key | What it does |
+| --- | --- |
+| `path` | The page's site path, literal, with no base and no locale prefix. Each path once. |
+| `from` | The collections the page lists, and the fields to take the words from. A field holds a string or Portable Text; anything else adds nothing. The collections need no search support and no public URL. |
+| `fallback` | `{ title, text? }`: makes the page when no entry has the path, for a route whose words are in the theme's code. Leave it out, and only an entry's own page gets the words. |
+| `type` | The type of the page `fallback` makes. Default `pages`. |
+
+- `from` takes the whole collection: every published entry without `seo.noIndex`, in the page's locale. List only collections and fields the page really shows, because the index is public. There are no filters.
+- The page keeps its entry's title, type and URL, in every locale that has one. `fallback` makes a page in the default locale only.
+- A published entry at the path with `seo.noIndex` on keeps the page out, with or without `fallback`. An unpublished one leaves the fallback, if any. An entry in a collection that is not indexed is not seen. If two entries have the path, nothing is added and the build warns.
+- `exclude` wins: an excluded path gets no page. An excluded entry still adds its words to the page that lists it.
+- A page gets up to 20,000 characters from its items; the build warns when it cuts the rest. An unknown collection or field is a build warning too.
+- `listPages` adds to a searchable site. With no search collection at all, the build stays `no-collections`.
+- A change to an item shows like any other change. A change to `listPages` itself is in your code, so click Rebuild now after you deploy.
+
+### Categories and tags
+
+`taxonomyKeywords` makes the labels of an entry's terms its keywords, so a search for a tag finds the posts that have it. It is off by default.
+
+```js
+search({ taxonomyKeywords: ["category", "tag"] });
+```
+
+- The names are the taxonomies' names in EmDash. A name no entry has terms in adds nothing, with no warning.
+- The entry's own keywords come first, then the labels in the order of the list, with no duplicates. An entry keeps its first 20 keywords, as everywhere.
+- A label is the one in the entry's locale, else the one in the default locale. The terms of an entry in `listPages` do not go to the page that lists it.
+- **When a change shows.** Saving or publishing the entry rebuilds the index as usual. But setting a term in the admin on its own, and renaming or deleting a term, send no content event in EmDash 1.4. They show after the next build: the next content change, Rebuild now or the nightly build.
+- Cost: about 2 more D1 queries per 100 entries (more on a site whose entries are in several locales). If EmDash cannot read the terms, the build warns and goes on without them.
 
 ### How fast a change shows
 
@@ -801,9 +889,9 @@ Measured on astronomic.dev (Docs, Learn, Themes, the changelog and the main page
 
 The engine-only columns time MiniSearch alone. A full dialog query (the engine, then grouping, filter counts and highlights) took about 10 ms at p95 at 4x CPU on the 528 records.
 
-The boot script on every page is about 2 KB gzip (2.08 KB measured, budget 2.25 KB). The app (engine, controller, browser behavior and dialog) is about 25 KB gzip (25.15 KB measured, budget 25.17 KB) and loads only on first use. MiniSearch, the engine, is about 6 KB of that.
+The boot script on every page is about 4 KB gzip (4.07 KB measured, budget 4.07 KB); about 2 KB of it is the phone stand-in box (see [Keyboard](#keyboard)). The app (engine, controller, browser behavior and dialog) is about 25 KB gzip (25.25 KB measured, budget 25.26 KB) and loads only on first use. MiniSearch, the engine, is about 6 KB of that.
 
-The embed's boot is 6.22 KB gzip (budget 6.22 KB); it holds the takeover, placements and the phone proxy, so it is larger than the integration's. Its dialog chunk is 26.16 KB (budget 26.48 KB), its results page chunk 22.41 KB (budget 24.62 KB), and the boot plus the dialog, the cold transfer on first use, 32.38 KB (budget 32.42 KB). The budgets are in `test/budgets.json`, and the tests fail past them. More: [astronomic.dev/docs/search/performance](https://astronomic.dev/docs/search/performance).
+The embed's boot is 6.24 KB gzip (budget 6.25 KB); it holds the takeover, placements and the phone proxy, so it is larger than the integration's. Its dialog chunk is 26.26 KB (budget 26.48 KB), its results page chunk 22.64 KB (budget 24.62 KB), and the boot plus the dialog, the cold transfer on first use, 32.50 KB (budget 32.51 KB). The budgets are in `test/budgets.json`, and the tests fail past them. More: [astronomic.dev/docs/search/performance](https://astronomic.dev/docs/search/performance).
 
 **When to move on (later).** Every record loads into the visitor's browser. At about 5,000 page and heading records, the load on a slowed-down phone passes half a second, and a site that big should move to a Pagefind-based engine, which loads only the parts of the index a query needs. That engine is planned, not built yet.
 

@@ -12,10 +12,13 @@
  * first, so it would see a trigger's first click before a bubbling listener here and go to /search. This script holds
  * that click in the capture phase instead, before any bubbling listener. A click with a modifier key or another button
  * is left alone, so it stays a normal link (a new tab or window). A bound trigger (BOUND) is left to its binder, whose
- * listener on the link runs before the router's on the document.
+ * listener on the link runs before the router's on the document; a tap on one goes to `touch` first, when there is one.
  */
 import { isApple, shortcutAction } from "../dom/shortcut.ts";
 import { BOUND } from "../dom/bound.ts";
+import type { TouchDraft, TouchOpen } from "./touch.ts";
+
+export { touchOpens, type TouchDraft, type TouchField, type TouchOpen, type TouchView } from "./touch.ts";
 
 /** The default dialog's triggers: every search link without a `data-search-ui` of its own. */
 export const DEFAULT_SELECTOR = "[data-search-trigger]:not([data-search-ui])";
@@ -23,6 +26,13 @@ export const DEFAULT_SELECTOR = "[data-search-trigger]:not([data-search-ui])";
 export interface BootApp {
 	/** Makes and binds the dialog for a trigger, so a replayed click or key opens it. */
 	prepare(trigger: HTMLElement, keys: string[]): unknown;
+	/**
+	 * For a touch open (`touch: touchOpens(view)`): opens the dialog for `trigger`, gives its input the focus, then the
+	 * stand-in's text and caret (`draft`), all in this call, and returns whether the input took the focus. False gets no
+	 * click after it (the dialog may be open already). Left out: the trigger is clicked instead, as for a mouse (a bound
+	 * trigger's click opens the dialog, and the text typed in the stand-in is lost).
+	 */
+	openTouch?(trigger: HTMLElement, draft: TouchDraft): boolean;
 }
 
 export interface BootOptions {
@@ -37,6 +47,11 @@ export interface BootOptions {
 	 * `prefetch` from the controller, for the trigger's `data-search-index`, handed to the app once it is in).
 	 */
 	preload?: (trigger: HTMLElement) => void;
+	/**
+	 * How a touch opens: `touchOpens(view)`, with a view that shows a stand-in box like your dialog's field (README, "Build your own dialog").
+	 * Left out, a tap opens as a click does, which on an iPhone gives the dialog no keyboard.
+	 */
+	touch?: TouchOpen;
 }
 
 export function startBoot(options: BootOptions): void {
@@ -77,24 +92,30 @@ export function startBoot(options: BootOptions): void {
 	const plain = (e: MouseEvent | KeyboardEvent) => !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey;
 
 	/**
-	 * Holds the press, loads the app, then replays it as a click (the app's trigger binder opens the dialog). If a route
-	 * swap removed the trigger meanwhile, the press is dropped: a click on the old link would leave the page just reached.
+	 * Replays a held press as a click (the app's trigger binder opens the dialog). If a route swap removed the trigger
+	 * meanwhile, the press is dropped: a click on the old link would leave the page just reached.
 	 */
+	function press(trigger: HTMLElement): void {
+		if (!trigger.isConnected) return;
+		replaying = true;
+		try {
+			trigger.click();
+		} finally {
+			replaying = false;
+		}
+	}
+
+	/** The load failed: a held press follows the link. */
+	function follow(trigger: HTMLElement): void {
+		if (trigger.isConnected) win.location.assign((trigger as HTMLAnchorElement).href || (trigger.getAttribute("href") ?? ""));
+	}
+
+	/** Holds the press, loads the app, then replays it. */
 	function hold(e: Event, trigger: HTMLElement): void {
 		e.preventDefault();
 		start(trigger).then(
-			() => {
-				if (!trigger.isConnected) return;
-				replaying = true;
-				try {
-					trigger.click();
-				} finally {
-					replaying = false;
-				}
-			},
-			() => {
-				if (trigger.isConnected) win.location.assign((trigger as HTMLAnchorElement).href || (trigger.getAttribute("href") ?? ""));
-			},
+			() => press(trigger),
+			() => follow(trigger),
 		);
 	}
 
@@ -120,9 +141,19 @@ export function startBoot(options: BootOptions): void {
 		"click",
 		(e) => {
 			const t = triggerOf(e.target);
-			// Once bound, the app's trigger binder handles the click and prevents it; a replayed click is for the binder.
-			if (!t || replaying || t.hasAttribute(BOUND) || e.defaultPrevented || e.button !== 0 || !plain(e)) return;
-			hold(e, t);
+			// A replayed click is for the app's binder.
+			if (!t || replaying || e.defaultPrevented || e.button !== 0 || !plain(e)) return;
+			if (
+				options.touch?.(
+					e,
+					t,
+					() => start(t),
+					() => press(t),
+				)
+			)
+				e.preventDefault();
+			// Once bound, the app's trigger binder handles the click and prevents it.
+			else if (!t.hasAttribute(BOUND)) hold(e, t);
 		},
 		true,
 	);

@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.2.2
+
+- Added: `touchOpens(view)` from `@astronomic-dev/search/boot`, for `startBoot({ touch })`, so a dialog of your own opens with the keyboard on an iPhone too. Your view shows a stand-in box like your dialog's field (`show(trigger)` returns `{ host, input, searchPage? }`, or `null` for an ordinary open), and your app's new optional `openTouch(trigger, draft)` takes over its focus, text and caret. The `touch` option is public now. See "Build your own dialog" in the README. A boot that does not use it does not grow.
+- Fixed, for a tap on a `SearchLink` button and for `touchOpens`: the handoff from the stand-in box waits for an unfinished input method composition to end, and Escape during one is left to the input method. If the app fails to load, the text typed in the box goes along to the search page as `q` when the link goes to it on the same site (the link's other parameters and its hash stay; a button with its own `href` keeps it as it is). A touch now counts only for the one click it gave, so a mouse click soon after a tap, or after a canceled touch, makes no stand-in. The boot script grows from 3.73 KB to 4.07 KB gzip.
+- Fixed: on an iPhone, a tap on a `SearchLink` button opened the dialog without the keyboard. A touch open now shows and focuses a stand-in box inside the tap, whether the app is loaded or not, and the dialog takes over its text and caret, as the embed already does. It also works for a button inside an open modal `<dialog>`. A mouse or a key opens as before. The boot script grows from 2.08 KB to 3.73 KB gzip. If you set the `--search-*` custom properties (or a toggle script sets `theme`) on `astronomic-search` itself, add `[data-search-proxy]` there too.
+
+### Added: the EmDash plugin
+
+- `search({ exclude: ["/speaking", "/projects/*"] })` leaves site paths out of the index, such as a page the theme has turned off while its entry stays published. Patterns are as in `html()`: exact, and a `*` is any one segment. A trailing slash makes no difference, letters can be plain or encoded, and a path with no locale prefix is left out in every locale. An excluded entry does not count as skipped. After you deploy a change to it, click **Rebuild now**, or it shows after the next content change or the nightly build (as with `collections` and `clip`).
+- `search({ listPages: [{ path: "/speaking", from: [{ collection: "talks", fields: ["title"] }], fallback: { title: "Speaking" } }] })` adds the words of whole collections to the page that lists them, so a search for a talk finds the talks page. The entry at the path gets the words; `fallback` makes the page when no entry has the path. Nothing changes for a site that does not use it.
+- `search({ taxonomyKeywords: ["category", "tag"] })` makes the labels of an entry's terms its keywords, so a search for a tag finds its posts. Off by default. Setting a term on its own or renaming one sends no content event in EmDash 1.4, so it shows after the next build.
+
+### Fixed: focus on the results page
+
+- **Try again** and **Search all types** no longer lose keyboard focus when a theme hides the results page's own field (`::part(form) { display: none }`). Focus goes to the results, a named group with a focus ring (`::part(area)`). Focus on another control, such as the theme's own search form, stays there. With the field shown, nothing changes.
+
+### Fixed: results while a short word is typed
+
+- The last word of a query now matches the words it starts from its first letter. It took 3 letters, so "te" said there were no results for a page about tests, and "search t" found only pages with the word "t". An exact short word ("go", "C") still ranks first. A short word before the last one still matches exactly. A last word of 3 letters or more finds what it found before. The index files do not change. The app budget for Astro is now 25.26 KB gzip, the embed's boot 6.25 KB, and the embed's first open (boot and app) 32.51 KB.
+
 ## 0.2.1
 
 - The Astro integration takes a `theme` (`"light"` or `"dark"`): every dialog `SearchLink` adds uses it, whatever the visitor's device is set to. Left out, nothing changes: the dialog follows the device. Any other value fails the build.

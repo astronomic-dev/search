@@ -7,7 +7,7 @@
  * off or run a fallback.
  *
  * A touch open always goes through the proxy, warm or cold: the proxy input takes focus inside the tap, so iOS opens
- * the keyboard, and the real dialog takes over when the app is in and at least HANDOFF ms have passed, with no
+ * the keyboard, and the real dialog takes over when the app is in and at least 150 ms have passed (see enterProxy), with no
  * entrance animation (iOS leaves the keyboard up but types nothing into a dialog that opens inside the tap). A mouse
  * or keyboard open with the app loaded opens the real dialog at once. A cold one shows the proxy too, so typing is
  * never lost.
@@ -15,7 +15,7 @@
 import type { EmbedApp } from "../embed-app.ts";
 import type { SearchElement } from "../../ui/element.ts";
 import { placementText } from "./open-from.ts";
-import { showProxy, type ProxyField } from "./proxy.ts";
+import { enterProxy, inProxy, showProxy, type ProxyField } from "./proxy.ts";
 
 export interface OpenRequest {
 	/** The element the dialog is for: its placement's data-search-index picks the index (see EmbedApp.openFrom). */
@@ -68,12 +68,6 @@ export function createOpen(doc: Document, app: AppHandle, defaultPlaceholder: st
 	const ESCAPE = 1;
 	const FAIL = 2;
 	const NO_APP = 3;
-	/**
-	 * The least time a touch open keeps focus in the proxy before the handoff. On an iPhone a handoff a few ms after the
-	 * proxy took focus left the keyboard up but typed nothing, most often when the keyboard was already up from a focus
-	 * return; 100 ms and more worked every time.
-	 */
-	const HANDOFF = 150;
 	/** How long a submit-started open waits for the app and the index, together, before the form submits natively. */
 	const DEADLINE = 4000;
 	/** Ends the current session. */
@@ -137,43 +131,17 @@ export function createOpen(doc: Document, app: AppHandle, defaultPlaceholder: st
 		const value = field?.value ?? "";
 		if (ready && !touch) return toDialog(ready, value, field ? caretOf(field) : undefined);
 		const text = placementText(source) || defaultPlaceholder;
-		// Inside the opener's open modal dialog (a nav drawer), if any: the page around it is inert. The walk goes up
-		// the composed tree (into a slot, out of a shadow root), so a drawer component's own shadow <dialog> counts.
-		let modal: Element | null | undefined = opener;
-		while (modal && !modal.matches("dialog[open]")) modal = modal.assignedSlot ?? modal.parentElement ?? (modal.parentNode as ShadowRoot | null)?.host;
-		proxy = showProxy(doc, text, modal, theme);
+		proxy = showProxy(doc, text, opener, theme);
 		const input = proxy.input;
-		const focused = () => (input.getRootNode() as ShadowRoot).activeElement === input;
 		input.value = value;
-		input.focus();
-		// No focus: a modal dialog the walk could not find (a closed shadow root's, whose slots are hidden) keeps the
-		// page inert. The opener's own subtree is rendered in that dialog, so the proxy mounts next to it instead, in
-		// the opener's named slot when the opener is the host's own child.
-		if (!focused()) {
-			proxy.host.slot = opener.slot;
-			opener.after(proxy.host);
-			input.focus();
-		}
+		// Its reasons to leave are QUIET and ESCAPE.
+		const held = enterProxy(proxy, opener, (why) => proxy && end(why));
 		if (field) input.setSelectionRange(...caretOf(field));
-		input.addEventListener("keydown", (e) => {
-			if (e.key !== "Escape" || e.isComposing) return;
-			// Only the proxy closes: inside a modal drawer the same Escape would cancel the drawer too.
-			e.preventDefault();
-			e.stopPropagation();
-			end(ESCAPE);
-		});
-		// Focus left the proxy before the handoff (Tab, Shift+Tab, a click elsewhere): the open is dropped, so a late
-		// load does not take focus back. Checked a task later, and not while the window itself lost focus.
-		input.addEventListener("focusout", () =>
-			setTimeout(() => {
-				if (proxy && doc.hasFocus() && !focused()) end(QUIET);
-			}),
-		);
-		// Here the app is in only for a touch open (see above), which holds the proxy at least HANDOFF ms: iOS needs that
+		// Here the app is in only for a touch open (see above), which holds the proxy at least 150 ms: iOS needs that
 		// long to tie the keyboard to the proxy.
-		Promise.all([ready ?? app.load(), touch && new Promise((r) => setTimeout(r, HANDOFF))]).then(
-			([a]) => cur === end && toDialog(a, input.value, caretOf(input), true),
-			() => end(NO_APP),
+		Promise.all([ready ?? app.load(), touch && held]).then(
+			([a]) => cur === end && (inProxy(input) ? toDialog(a, input.value, caretOf(input), true) : end(QUIET)),
+			() => end(inProxy(input) ? NO_APP : QUIET),
 		);
 	};
 }

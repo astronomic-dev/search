@@ -31,7 +31,7 @@ import type {
 	SearchState,
 	StatusResponse,
 } from "./ports.ts";
-import { indexDefaultLocale } from "./records.ts";
+import { indexDefaultLocale } from "./paths.ts";
 import { largestFile, readIndex, readState } from "./store.ts";
 import { MANIFEST_PATH, readSettings, saveSettings } from "./settings.ts";
 

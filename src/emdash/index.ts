@@ -14,10 +14,13 @@
  */
 import type { PluginDescriptor, ResolvedPlugin } from "emdash";
 import { definePlugin } from "emdash";
+import { checkListPages } from "./core/list-pages.ts";
+import { checkExclude } from "./core/paths.ts";
 import type { PluginOptions } from "./core/ports.ts";
+import { checkTaxonomyKeywords } from "./core/records.ts";
 import { ADMIN_ENTRY, ADMIN_PAGES, CAPABILITIES, PLUGIN_ID, pluginDefinition, VERSION } from "./plugin.ts";
 
-export type { PluginOptions as SearchPluginOptions } from "./core/ports.ts";
+export type { ListPage as SearchListPage, PluginOptions as SearchPluginOptions } from "./core/ports.ts";
 
 const ENTRYPOINT = "@astronomic-dev/search/emdash";
 
@@ -37,6 +40,9 @@ export function search(options: PluginOptions = {}): PluginDescriptor<PluginOpti
 	if (!sameAsJson(options)) {
 		throw new Error("search(): options must be plain JSON (no functions, RegExps, Dates or undefined values); EmDash passes them to the plugin as JSON");
 	}
+	if (options.exclude !== undefined) checkExclude(options.exclude);
+	if (options.listPages !== undefined) checkListPages(options.listPages);
+	if (options.taxonomyKeywords !== undefined) checkTaxonomyKeywords(options.taxonomyKeywords);
 	return {
 		id: PLUGIN_ID,
 		version: VERSION,

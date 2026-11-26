@@ -17,13 +17,27 @@
  * - Text: the first of `excerpt`, `summary`, `description`, `seo.description`, then the plain text of the
  *   Portable Text `content` (every block, headings too). No heading records: EmDash's renderer prints no
  *   heading ids, and the package takes anchors only from what the page renders.
- * - Keywords: the `search_keywords` field (an array or a comma list), or `searchKeywords`.
+ * - Keywords: the `search_keywords` field (an array or a comma list), or `searchKeywords`. With `taxonomyKeywords`, the
+ *   labels of the entry's terms follow. One read per list page and locale of its entries; EmDash 1.4 makes it one query
+ *   per 50 entries: 2 more per 100 entries in one locale, rounded up per locale (so 5 to 7 instead of 3 to 5), plus one
+ *   for the taxonomy definitions (cached per Worker; one per read for an isolated database). 10,000 entries in one
+ *   locale: about 200 more. Workers Paid then fits about 13,000 entries with SEO, 19,000 without. A failed read is a
+ *   warning, and the build goes on without terms.
+ *
+ * - `listPages` adds the words of other entries to the record of the page that lists them (list-pages.ts). It reads
+ *   each `from` collection once, also when that collection is indexed or read by two pages: nothing more for an
+ *   indexed one, 3 to 5 queries per 100 published entries for any other. No query per item.
+ * - `exclude` (site path patterns) leaves entries out by their public path. Like drafts, they are not counted as
+ *   skipped. See `excluder`.
  *
  * Platform-free: no `emdash`, `node:*`, `react` or `astro` imports.
  */
-import { squash } from "../../core/text.ts";
+import { foldText, squash } from "../../core/text.ts";
 import type { PageRecord, SearchRecord } from "../../core/types.ts";
-import type { CollectionInfo, ContentPort, EmDashEntry, PluginOptions, SchemaPort, UrlRules } from "./ports.ts";
+import { firstText, isText, portableTextToPlain } from "./entry-text.ts";
+import { createListPages } from "./list-pages.ts";
+import { entryPath, excluder, indexLocale } from "./paths.ts";
+import type { CollectionInfo, ContentPort, EmDashEntry, PluginOptions, SchemaPort, TermsPort } from "./ports.ts";
 
 export interface CollectResult {
 	/** Records per locale, in collection then list order. */
@@ -33,28 +47,6 @@ export interface CollectResult {
 	/** Entries skipped because they have no public path. */
 	skipped: number;
 	warnings: string[];
-}
-
-const isText = (v: unknown): v is string => typeof v === "string" && v.trim() !== "";
-
-/** The first value that is a non-empty string. */
-function firstText(...values: unknown[]): string | undefined {
-	for (const v of values) if (isText(v)) return v;
-	return undefined;
-}
-
-/** Plain text of Portable Text: the spans of every block, blocks joined by a space. Anything else gives "". */
-export function portableTextToPlain(value: unknown): string {
-	if (!Array.isArray(value)) return "";
-	const blocks: string[] = [];
-	for (const block of value) {
-		if (!block || typeof block !== "object") continue;
-		const children = (block as { children?: unknown }).children;
-		if (!Array.isArray(children)) continue;
-		const text = children.map((c) => (c && typeof c === "object" && typeof (c as { text?: unknown }).text === "string" ? (c as { text: string }).text : "")).join("");
-		if (text.trim()) blocks.push(text);
-	}
-	return squash(blocks.join(" "));
 }
 
 /** Keywords from an array of strings or a comma list, each squashed, empty ones dropped (as `collections()`). */
@@ -78,120 +70,13 @@ export function entryRecord(e: EmDashEntry, url: string, defaultLocale: string):
 	return { id: `${locale}:${url}`, kind: "page", locale, type: e.type, url, title, text, facets: {}, source: "emdash", ...(keywords.length > 0 ? { keywords } : {}) };
 }
 
-// ---------------------------------------------------------------------------
-// Public paths: a copy of EmDash 1.4's resolver (`i18n/resolve.ts`, `plugins/content-access.ts`
-// `getPublicUrl`). EmDash does not export it to plugins. `test/emdash-urls.test.ts` checks it against
-// EmDash's own function.
-// ---------------------------------------------------------------------------
-
-const REPEATED_SLASHES = /\/{2,}/g;
-const TRAILING_SLASH = /\/$/;
-const DATE_TOKEN = /\{(year|month|day|hour|minute|second)\}/g;
-/** SQLite datetime with no zone ("2023-05-08 10:00:00"): stored as UTC. */
-const OFFSETLESS_DATETIME = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?)$/;
-const pad2 = (n: number) => String(n).padStart(2, "0");
-
-/** `/a//b/` to `/a/b`, always starting with "/". */
-function normalizePath(path: string): string {
-	let p = path.replace(REPEATED_SLASHES, "/");
-	if (p.length > 1 && p.endsWith("/")) p = p.slice(0, -1);
-	if (!p.startsWith("/")) p = `/${p}`;
-	return p;
-}
-
-/** `{year}` ... `{second}` from the publish date (UTC, zero-padded); left as written with no valid date. */
-function applyDateTokens(path: string, date: string | null | undefined): string {
-	if (date == null) return path;
-	const offsetless = OFFSETLESS_DATETIME.exec(date);
-	const d = new Date(offsetless ? `${offsetless[1]}T${offsetless[2]}Z` : date);
-	if (Number.isNaN(d.getTime())) return path;
-	const parts: Record<string, string> = {
-		year: String(d.getUTCFullYear()),
-		month: pad2(d.getUTCMonth() + 1),
-		day: pad2(d.getUTCDate()),
-		hour: pad2(d.getUTCHours()),
-		minute: pad2(d.getUTCMinutes()),
-		second: pad2(d.getUTCSeconds()),
-	};
-	return path.replace(DATE_TOKEN, (match, key: string) => parts[key] ?? match);
-}
-
-/** The collection's URL pattern (or `/<collection>/{slug}`) with `{slug}`, `{id}` and the date tokens filled in. */
-function interpolate(pattern: string | null, collection: string, slug: string, id: string, date: string | null | undefined): string {
-	const base = pattern ?? `/${encodeURIComponent(collection)}/{slug}`;
-	const path = applyDateTokens(base.replaceAll("{slug}", encodeURIComponent(slug)).replaceAll("{id}", encodeURIComponent(id)), date);
-	return normalizePath(path);
-}
-
 /**
- * The URL segment of a locale. Null: i18n is off (no prefix). "": the default locale with
- * `prefixDefaultLocale` off. Undefined: the locale is not configured, so the site cannot serve it.
- */
-function localeSegment(i18n: UrlRules["i18n"], locale: string): string | null | undefined {
-	if (!i18n || !i18n.locales || i18n.locales.length <= 1) return null;
-	let segment: string | undefined;
-	let isDefault = locale === i18n.defaultLocale;
-	for (const l of i18n.locales) {
-		if (typeof l === "string") {
-			if (l === locale) {
-				segment = l;
-				break;
-			}
-		} else if (l.path === locale || l.codes.includes(locale)) {
-			segment = l.path;
-			isDefault ||= l.path === i18n.defaultLocale || l.codes.includes(i18n.defaultLocale);
-			break;
-		}
-	}
-	if (segment === undefined) return undefined;
-	if (isDefault && !i18n.prefixDefaultLocale) return "";
-	return segment;
-}
-
-/**
- * The key a locale's index is stored under: the locale itself, or for an Astro custom-path locale
- * (`{ path: "portugues", codes: ["pt-BR"] }`) its first code. EmDash stores the path on the entry, but
- * the browser loader picks the index by the page's `<html lang>`, which is a code. URLs keep the path.
- */
-export function indexLocale(locale: string, rules: UrlRules | undefined): string {
-	for (const l of rules?.i18n?.locales ?? []) {
-		if (typeof l === "string") {
-			if (l === locale) return locale;
-		} else if (l.path === locale || l.codes.includes(locale)) {
-			return l.codes[0] ?? locale;
-		}
-	}
-	return locale;
-}
-
-/** The default locale's index key (see `indexLocale`): the manifest's `defaultLocale` and the fallback file. */
-export const indexDefaultLocale = (content: Pick<ContentPort, "defaultLocale" | "urlRules">): string => indexLocale(content.defaultLocale(), content.urlRules?.());
-
-/**
- * The public path EmDash's `getPublicUrl(collection, entry.id)` gives for this row, without its site URL (EmDash
- * gives null with no site URL; this path needs none).
- * Null when EmDash gives null: not published, no slug, collection not routable, or a locale the site does
- * not serve.
- */
-export function entryPath(c: Pick<CollectionInfo, "slug" | "routable" | "urlPattern">, e: EmDashEntry, rules: UrlRules): string | null {
-	if (e.status !== "published" || !e.slug || !c.routable) return null;
-	const path = interpolate(c.urlPattern ?? null, c.slug, e.slug, e.id, e.publishedAt);
-	const segment = localeSegment(rules.i18n, e.locale || rules.siteLocale);
-	if (segment === undefined) return null;
-	const localized = segment === null || segment === "" ? normalizePath(path) : normalizePath(`/${segment}${path}`);
-	if (localized === "/") return localized;
-	if (rules.trailingSlash === "always") return `${localized}/`;
-	if (rules.trailingSlash === "never") return localized.replace(TRAILING_SLASH, "");
-	return localized;
-}
-
-/**
- * The collections to index. Default: every one with `search` in `supports`, `routable` and not `hidden`.
+ * The collections to index (and `all` the site has). Default: every one with `search` in `supports`, `routable` and not `hidden`.
  * Listed ones are taken as listed; one that is missing or not routable is left out with a warning.
  */
-export async function searchCollections(schema: SchemaPort, options: PluginOptions): Promise<{ collections: CollectionInfo[]; warnings: string[] }> {
+export async function searchCollections(schema: SchemaPort, options: PluginOptions): Promise<{ collections: CollectionInfo[]; all: CollectionInfo[]; warnings: string[] }> {
 	const all = await schema.listCollections();
-	if (!options.collections) return { collections: all.filter((c) => c.supports.includes("search") && c.routable && !c.hidden), warnings: [] };
+	if (!options.collections) return { all, collections: all.filter((c) => c.supports.includes("search") && c.routable && !c.hidden), warnings: [] };
 	const warnings: string[] = [];
 	const collections: CollectionInfo[] = [];
 	for (const slug of new Set(options.collections)) {
@@ -200,38 +85,108 @@ export async function searchCollections(schema: SchemaPort, options: PluginOptio
 		else if (!c.routable) warnings.push(`Search: collection "${slug}" is not routable (its entries have no public URL); it is left out`);
 		else collections.push(c);
 	}
-	return { collections, warnings };
+	return { all, collections, warnings };
+}
+
+/** Throws unless `input` is a list of taxonomy names. */
+export function checkTaxonomyKeywords(input: unknown): asserts input is string[] {
+	if (Array.isArray(input) && input.every(isText)) return;
+	throw new Error(`Search: search(): taxonomyKeywords must be a list of taxonomy names (["category", "tag"]), not ${JSON.stringify(input)}`);
+}
+
+/** Adds the labels of `taxonomies`, in that order, to a record's keywords. One that is there already (in any case or accents) is left out. */
+function addTerms(record: PageRecord, labels: Readonly<Record<string, readonly string[]>>, taxonomies: readonly string[]): void {
+	const keywords = [...(record.keywords ?? [])];
+	const seen = new Set(keywords.map(foldText));
+	for (const label of taxonomies.flatMap((name) => (Object.hasOwn(labels, name) ? keywordList([...labels[name]]) : []))) {
+		if (seen.has(foldText(label))) continue;
+		seen.add(foldText(label));
+		keywords.push(label);
+	}
+	if (keywords.length > 0) record.keywords = keywords;
+}
+
+/**
+ * The `taxonomyKeywords` step of one build: given the entries of a list page and their records, adds the term labels.
+ * EmDash resolves labels in one locale per read, so the entries are grouped by locale. The first failed read is a
+ * warning and the last read. Null: the option is not used.
+ */
+function termReader(terms: TermsPort | undefined, options: PluginOptions, defaultLocale: string, warnings: string[]): ((collection: string, rows: Array<{ e: EmDashEntry; record: PageRecord }>) => Promise<void>) | null {
+	const taxonomies = options.taxonomyKeywords ?? [];
+	if (taxonomies.length === 0) return null;
+	let failed = false;
+	return async (collection, rows) => {
+		const byLocale = new Map<string, Array<{ id: string; record: PageRecord }>>();
+		for (const { e, record } of rows) {
+			const locale = e.locale || defaultLocale;
+			byLocale.set(locale, [...(byLocale.get(locale) ?? []), { id: e.id, record }]);
+		}
+		for (const [locale, group] of byLocale) {
+			if (failed) return;
+			try {
+				if (!terms) throw new Error("no access to taxonomies");
+				const labels = await terms.labels(collection, group.map((g) => g.id), locale);
+				for (const { id, record } of group) addTerms(record, labels.get(id) ?? {}, taxonomies);
+			} catch (error) {
+				failed = true;
+				warnings.push(`Search: taxonomyKeywords: the terms could not be read (${error instanceof Error ? error.message : String(error)}); the rest of this build goes on without them, and the next build tries again`);
+			}
+		}
+	};
 }
 
 /** Every indexable entry of the search collections as page records, per locale. `found`: the collections already read this run. */
-export async function collectRecords(ports: { content: ContentPort; schema: SchemaPort }, options: PluginOptions, found?: Awaited<ReturnType<typeof searchCollections>>): Promise<CollectResult> {
+export async function collectRecords(ports: { content: ContentPort; schema: SchemaPort; terms?: TermsPort }, options: PluginOptions, found?: Awaited<ReturnType<typeof searchCollections>>): Promise<CollectResult> {
 	const { content, schema } = ports;
-	const { collections, warnings: seen } = found ?? (await searchCollections(schema, options));
+	const { collections, all, warnings: seen } = found ?? (await searchCollections(schema, options));
 	const warnings = [...seen];
 	const byLocale: Record<string, SearchRecord[]> = Object.create(null);
 	const types: Record<string, { label: string }> = {};
 	// Read once per build: every path then comes from the listed rows (no query per entry).
 	const rules = content.urlRules?.();
 	const defaultLocale = indexLocale(content.defaultLocale(), rules);
+	const excluded = excluder(options.exclude, rules);
+	// With no search collection the build stops (`no-collections`), so list pages read nothing.
+	const lists = collections.length > 0 ? createListPages(options.listPages, { rules, defaultLocale: content.defaultLocale(), all, excluded, warnings }) : null;
+	const readTerms = termReader(ports.terms, options, content.defaultLocale(), warnings);
 	let skipped = 0;
-	for (const c of collections) {
-		types[c.slug] = { label: c.label || c.slug };
+	// One scan per collection, also when it is indexed and read by a list page.
+	const indexed = new Set(collections.map((c) => c.slug));
+	for (const c of [...collections, ...(lists?.collections ?? []).filter((x) => !indexed.has(x.slug))]) {
+		const searched = indexed.has(c.slug);
+		if (searched) types[c.slug] = { label: c.label || c.slug };
 		let cursor: string | undefined;
 		do {
 			const page = await content.list(c.slug, cursor);
+			const rows: Array<{ e: EmDashEntry; record: PageRecord }> = [];
 			for (const e of page.items) {
-				if (!isIndexable(e)) continue;
+				const indexable = isIndexable(e);
+				if (indexable) lists?.item(c.slug, e);
+				// A published noIndex entry gives no record, but it keeps its list page out.
+				if (!searched || !(indexable || (lists && e.status === "published"))) continue;
 				const url = rules ? entryPath(c, e, rules) : await content.publicPath(c.slug, e.id);
 				if (!url) {
-					skipped++;
+					if (indexable) skipped++;
+					continue;
+				}
+				if (excluded(url, e.locale)) continue;
+				if (!indexable) {
+					lists?.owner(e, url, null);
 					continue;
 				}
 				// Stored under the code the page's <html lang> gives; the URL above keeps the custom path.
 				const r = entryRecord(e.locale ? { ...e, locale: indexLocale(e.locale, rules) } : e, url, defaultLocale);
 				(byLocale[r.locale] ??= []).push(r);
+				lists?.owner(e, url, r);
+				rows.push({ e, record: r });
 			}
+			if (rows.length > 0) await readTerms?.(c.slug, rows);
 			cursor = page.nextCursor;
 		} while (cursor);
+	}
+	for (const { record, label } of lists?.finish() ?? []) {
+		(byLocale[record.locale] ??= []).push(record);
+		types[record.type] ??= { label };
 	}
 	const sortedTypes = Object.fromEntries(Object.keys(types).sort().map((t) => [t, types[t]]));
 	return { byLocale: { ...byLocale }, types: sortedTypes, skipped, warnings };

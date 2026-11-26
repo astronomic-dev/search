@@ -129,6 +129,16 @@ function state(over: Partial<State> = {}): State {
 	};
 }
 
+test("the results and the message sit in a named group a script can focus, with a visible focus ring", () => {
+	const shell = renderPage(doc, ctx());
+	const area = el(shell.area);
+	assert.equal(area.getAttribute("role"), "group");
+	assert.equal(area.getAttribute("tabindex"), "-1");
+	assert.equal(area.getAttribute("aria-label"), "results");
+	assert.deepEqual(area.children, [el(shell.panel)]);
+	assert.match(css, /\[part~="area"\]:focus-visible[^}]*outline: 2px solid/);
+});
+
 test("renderPage builds a search landmark, a labeled GET form (input name = queryParam, action = results URL), a type row, a facets group, a count, a list, a message, a Show more button and a polite live region", () => {
 	const shell = renderPage(doc, ctx());
 	const root = el(shell.root);

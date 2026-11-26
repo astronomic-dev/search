@@ -11,6 +11,7 @@ import {
 	pageFragments,
 	PLUGIN_ID,
 	pluginDefinition,
+	portsFrom,
 	REBUILD_SOON,
 	searchRoutes,
 	TICK,
@@ -32,7 +33,7 @@ interface Ctx {
 	ctx: PluginContext;
 	schedules: Array<{ name: string; schedule: string }>;
 	deferred: Array<() => Promise<void>>;
-	deps: WrapperDeps & { request: { editMode?: boolean; preview?: unknown } | undefined };
+	deps: WrapperDeps & { request: { editMode?: boolean; preview?: unknown } | undefined; termCalls: Array<{ collection: string; ids: string[]; locale: string }> };
 }
 
 /** A fake EmDash plugin context over the fake KV, with one published post and one draft. */
@@ -66,6 +67,11 @@ function fakeCtx(entries: EmDashEntry[] = [entry("posts", "hello", { data: { tit
 		request: undefined,
 		after: (fn) => void deferred.push(fn),
 		getRequestContext: () => deps.request,
+		getAllTermsForEntries: async (collection, ids, options) => {
+			deps.termCalls.push({ collection, ids, locale: options.locale });
+			return new Map(ids.map((id) => [id, { tag: [{ label: "Field notes" }, { label: "Essay" }] }]));
+		},
+		termCalls: [],
 	};
 	return { ctx, schedules, deferred, deps };
 }
@@ -97,6 +103,32 @@ test("search() throws on options that do not survive JSON", () => {
 	for (const bad of [{ clip: () => 3 }, { collections: [/posts/] }, { budget: { gzipKB: new Date() } }, { clip: undefined }, { clip: Number.NaN }]) {
 		assert.throws(() => search(bad as never), /plain JSON/);
 	}
+});
+
+test("search() takes exclude as JSON and throws on a bad value", () => {
+	const d = search({ exclude: ["/speaking", "/projects/*"] });
+	assert.deepEqual(JSON.parse(JSON.stringify(d.options)), { exclude: ["/speaking", "/projects/*"] });
+	for (const bad of ["/speaking", ["speaking"], ["/ok", 3], null]) assert.throws(() => search({ exclude: bad } as never), /exclude must be a list of site paths/);
+	assert.throws(() => search({ exclude: [/speaking/] } as never), /plain JSON/);
+});
+
+test("search() takes listPages as JSON and throws on a bad value", () => {
+	const listPages = [{ path: "/speaking", from: [{ collection: "talks", fields: ["title"] }], fallback: { title: "Speaking" } }];
+	assert.deepEqual(JSON.parse(JSON.stringify(search({ listPages }).options)), { listPages });
+	assert.throws(() => search({ listPages: [{ path: "/x" }] } as never), /listPages\[0\]\.from must be a list/);
+	assert.throws(() => search({ listPages: [...listPages, { ...listPages[0], path: "/speaking/" }] }), /twice/);
+});
+
+test("search() takes taxonomyKeywords as JSON and throws on a bad value", () => {
+	assert.deepEqual(search({ taxonomyKeywords: ["tag"] }).options, { taxonomyKeywords: ["tag"] });
+	assert.throws(() => search({ taxonomyKeywords: true } as never), /taxonomyKeywords must be a list of taxonomy names/);
+});
+
+test("the terms port reads labels through EmDash's batch read, with the locale given", async () => {
+	const f = fakeCtx();
+	const labels = await portsFrom(f.ctx, f.deps).terms!.labels("posts", ["a", "b"], "fr");
+	assert.deepEqual([...labels], [["a", { tag: ["Field notes", "Essay"] }], ["b", { tag: ["Field notes", "Essay"] }]]);
+	assert.deepEqual(f.deps.termCalls, [{ collection: "posts", ids: ["a", "b"], locale: "fr" }]);
 });
 
 test("VERSION matches package.json", () => {

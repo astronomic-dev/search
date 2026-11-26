@@ -236,3 +236,58 @@ test("owner keywords are indexed with the facet values: start finds Lodestar onl
 	assert.deepEqual(hit.match, { start: ["keywords"] });
 	assert.ok(ids(withKw.search("docs")).includes("en:/lodestar"), "facet values stay in the keywords field");
 });
+
+// The word being typed (the last one) matches from its first letter, so "no results" is true while a visitor types.
+const typed = [
+	rec("/testing", "Testing", "How we test."),
+	rec("/team", "Team", "The people."),
+	rec("/tour", "Tour", "To and fro."),
+	rec("/c", "C", "A language."),
+	rec("/cards", "Cards", "Cards, colors, columns, code, content, copy, corners, crops, curves and cases."),
+];
+
+test("a short last word finds the words it starts", () => {
+	const engine = load(settings, typed);
+	assert.deepEqual(new Set(ids(engine.search("te"))), new Set(["en:/testing", "en:/team"]));
+	assert.deepEqual(new Set(ids(engine.search("t"))), new Set(["en:/testing", "en:/team", "en:/tour"]));
+	// Folded, and whatever space or punctuation follows.
+	assert.deepEqual(new Set(ids(engine.search(" TÉ, "))), new Set(["en:/testing", "en:/team"]));
+	assert.deepEqual(ids(engine.search("qz")), []);
+	// The hit stands for the query word, and marks the words it starts.
+	const hit = engine.search("te").find((h) => h.id === "en:/team")!;
+	assert.deepEqual(hit.queryTerms, ["te"]);
+	assert.deepEqual(hit.terms, ["team"]);
+});
+
+test("a short word before the last one stays exact", () => {
+	const engine = load(settings, typed);
+	// "te" starts no match here; "cards" does.
+	assert.deepEqual(ids(engine.search("te cards")), ["en:/cards"]);
+	assert.deepEqual(new Set(ids(engine.search("cards te"))), new Set(["en:/cards", "en:/testing", "en:/team"]));
+	// The same word twice is the last word.
+	assert.deepEqual(new Set(ids(engine.search("te te"))), new Set(["en:/testing", "en:/team"]));
+});
+
+test("an exact short word ranks over the words it starts", () => {
+	assert.deepEqual(ids(load(settings, typed).search("c")), ["en:/c", "en:/cards"]);
+	// However many of them a page has, in its title too.
+	const words = Array.from({ length: 60 }, (_, i) => `go${String.fromCharCode(97 + (i % 26))}${i}`).join(" ");
+	const many = [rec("/gophers", `Gophers goats ${words}`, words), rec("/go", "Notes", `A long page that names Go once. ${"Other words fill it. ".repeat(40)}`), ...typed];
+	for (const form of ["A", "B"] as const) {
+		const e = createMinisearchEngine(form);
+		assert.deepEqual(ids(e.load(e.build("site", "en", many, settings)).search("go")), ["en:/go", "en:/gophers"]);
+	}
+});
+
+test("a short last word with synonyms: the word typed is the last one, not its synonym", () => {
+	const s = { ...settings, synonyms: [["te", "cards"], ["cards", "to"]] };
+	const hits = load(s, typed).search("te");
+	assert.deepEqual(new Set(ids(hits)), new Set(["en:/testing", "en:/team", "en:/cards"]));
+	for (const h of hits) assert.deepEqual(h.queryTerms, ["te"]);
+	// A word that "go" only starts stands for "go", not for its synonym "js".
+	const both = { ...settings, synonyms: [["js", "go"]] };
+	const gophers = load(both, [rec("/gophers", "Gophers"), rec("/go", "Go")]);
+	assert.deepEqual(gophers.search("js go").map((h) => [h.id, [...h.queryTerms].sort()]), [["en:/go", ["go", "js"]], ["en:/gophers", ["go"]]]);
+	// "to" is a synonym here, not the word being typed: exact ("To and fro"), so not "Tour" by its title.
+	assert.deepEqual(load(s, [rec("/tour", "Tour"), rec("/cards", "Cards")]).search("cards").map((h) => h.id), ["en:/cards"]);
+});

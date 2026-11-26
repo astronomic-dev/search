@@ -53,7 +53,7 @@ button {
 	text-transform: none;
 	letter-spacing: normal;
 }
-button:focus-visible, a:focus-visible {
+button:focus-visible, a:focus-visible, [part~="area"]:focus-visible {
 	outline: 2px solid var(--_focus);
 	outline-offset: 2px;
 	border-radius: 0.375rem;
@@ -66,6 +66,7 @@ button:focus-visible, a:focus-visible {
 	min-width: 0;
 	line-height: 1.5;
 }
+[part~="area"] { min-width: 0; }
 [part~="head"], [part~="panel"] { display: grid; gap: 1rem; min-width: 0; }
 
 /* The form: the box and the page's one primary button. */

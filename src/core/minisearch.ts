@@ -35,11 +35,17 @@ const FIELDS = ["title", "heading", "text", "keywords", "more"];
 const CAPABILITIES: Capabilities = { fuzzy: true, prefix: true, facets: true, highlights: true, synonyms: true };
 const VERSION = "7.2.0";
 
+/** A start of a word this long matches anywhere in the query; a shorter one only as the last word, the one being typed. */
+const PREFIX = 3;
+/** The prefix weight of a short last word: a letter starts many words, so together they must not outrank the word itself. */
+const SHORT_PREFIX = 0.001;
+
 /** Short terms are exact; 4 letters allow one edit, 5 and up two. */
 const fuzzy = (term: string) => (term.length < 4 ? 0 : term.length < 5 ? 1 : 2);
 
 const tokenize = MiniSearch.getDefault("tokenize") as (text: string) => string[];
-const termsOf = (q: string) => [...new Set(tokenize(q).map(foldText).filter(Boolean))];
+const wordsOf = (q: string) => tokenize(q).map(foldText).filter(Boolean);
+const termsOf = (q: string) => [...new Set(wordsOf(q))];
 
 /** The folded words of `rest` that are not in `seen`, once each, in first-seen order. */
 function newWords(seen: Set<string>, rest: string): string[] {
@@ -76,7 +82,7 @@ function options(settings: IndexSettings, typeOf: (id: string) => string | undef
 		processTerm: (term) => foldText(term),
 		searchOptions: {
 			boost: { title: weights.title, heading: weights.heading, text: weights.text, keywords: weights.keywords, more: weights.text * 0.1 },
-			prefix: (term) => term.length > 2,
+			prefix: (term) => term.length >= PREFIX,
 			fuzzy,
 			weights: { fuzzy: 0.3, prefix: 0.6 },
 			combineWith: "AND",
@@ -88,15 +94,15 @@ function options(settings: IndexSettings, typeOf: (id: string) => string | undef
 	};
 }
 
-const toHit = (h: MiniHit, back?: Map<string, string[]>): EngineHit => ({
+const toHit = (h: MiniHit, short: string | false, back?: Map<string, string[]>): EngineHit => ({
 	id: h.id,
 	score: h.score,
 	// Marks only for real matches: an indexed term the searched word equals or starts, not a fuzzy near-miss
 	// ("code" finds "come", but does not mark it). The searched words include synonyms, so a synonym's word is marked.
 	terms: h.terms.filter((t) => h.queryTerms.some((q) => t.startsWith(q))),
 	match: h.match,
-	// A synonym's match counts for the query word that brought it in.
-	queryTerms: [...new Set(back ? h.queryTerms.flatMap((t) => back.get(t) ?? [t]) : h.queryTerms)],
+	// A synonym's match counts for the query word that brought it in; a word the short last word only starts is not the synonym.
+	queryTerms: [...new Set(back ? h.queryTerms.flatMap((t) => (t === short && !h.terms.includes(t) ? [t] : (back.get(t) ?? [t]))) : h.queryTerms)],
 });
 /** Word -> the other words of its groups. */
 function synonymMap(groups: readonly (readonly string[])[] | undefined): Map<string, string[]> {
@@ -159,16 +165,24 @@ export function createMinisearchEngine(form: Form = "A"): EngineFactory {
 				name: "minisearch",
 				capabilities: CAPABILITIES,
 				search(q: string): EngineHit[] {
-					if (!q.trim()) return [];
-					if (!synonyms.size) return ms.search(q, { combineWith: "OR" }).map((h) => toHit(h));
-					// Each query word, plus the rest of its synonym groups; `back` maps every searched word to the query words it stands for.
-					const back = new Map<string, string[]>();
-					const add = (word: string, from: string) => back.set(word, [...(back.get(word) ?? []), from]);
-					for (const t of termsOf(q)) {
-						add(t, t);
-						for (const other of synonyms.get(t) ?? []) add(other, t);
+					let words = wordsOf(q);
+					const last = words.at(-1);
+					if (!last) return [];
+					let back: Map<string, string[]> | undefined;
+					if (synonyms.size) {
+						// Each query word, plus the rest of its synonym groups; `back` maps every searched word to the query words it stands for.
+						const map = (back = new Map<string, string[]>());
+						const add = (word: string, from: string) => map.set(word, [...(map.get(word) ?? []), from]);
+						for (const t of new Set(words)) {
+							add(t, t);
+							for (const other of synonyms.get(t) ?? []) add(other, t);
+						}
+						words = [...map.keys()];
 					}
-					return ms.search([...back.keys()].join(" "), { combineWith: "OR" }).map((h) => toHit(h, back));
+					// A short last word is its own query: a start, whatever its length. Fuzzy never applies to it.
+					const short = last.length < PREFIX && last;
+					const queries = short ? [words.filter((w) => w !== last).join(" "), { queries: [last], prefix: true, weights: { fuzzy: 0, prefix: SHORT_PREFIX } }] : [words.join(" ")];
+					return ms.search({ combineWith: "OR", queries }).map((h) => toHit(h, short, back));
 				},
 				terms: termsOf,
 				record: (id) => records.get(id),

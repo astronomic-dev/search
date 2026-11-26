@@ -9,7 +9,7 @@ import { MAX_WAIT_MS, QUIET_MS, SOON_MS, countsAsChange, isDue, markDirty, onCon
 import { LEASE_MS, MAX_INDEX_BYTES, emptyState, readIndex, readState, takeLease, updateState } from "../src/emdash/core/store.ts";
 import { minisearchEngine } from "../src/core/minisearch.ts";
 import type { IndexFile } from "../src/core/types.ts";
-import type { KvPort, SearchPorts, SearchState } from "../src/emdash/core/ports.ts";
+import type { PluginOptions, KvPort, SearchPorts, SearchState } from "../src/emdash/core/ports.ts";
 import type { EmDashEntry as Entry } from "../src/emdash/core/ports.ts";
 
 const T0 = Date.UTC(2026, 10, 23, 12, 0, 0);
@@ -149,6 +149,77 @@ test("the stats are right for a fixed fixture", async () => {
 	const s = await state(r.kv);
 	assert.equal(s.history.length, 1);
 	assert.equal(s.history[0].pages, 3);
+});
+
+test("exclude: the counts, the file and the log leave the entries out, with no skipped entry and no warning", async () => {
+	const r = rig({ entries: [entry("posts", "one"), entry("posts", "two"), entry("posts", "three")] });
+	const result = await runIfDue(r.p, { exclude: ["/posts/two"] }, "tick");
+	assert.ok(result.ok && "active" in result);
+	const { engine, active } = await loadActive(r.kv);
+	assert.deepEqual(urls(engine), ["/posts/one", "/posts/three"]);
+	assert.deepEqual([active.pages, active.records, active.skipped], [2, 2, 0]);
+	assert.deepEqual((await state(r.kv)).history.map((h) => h.pages), [2]);
+	assert.deepEqual(r.logs.filter((l) => l.level !== "info"), []);
+	assert.ok(r.logs.some((l) => /built 2 pages.*\(0 skipped\)/.test(l.message)));
+});
+
+test("exclude: two entries at one excluded path give no duplicate warning", async () => {
+	const r = rig({ entries: [entry("posts", "a", { id: "a" }), entry("posts", "b", { id: "b" }), entry("posts", "c")], paths: { a: "/same", b: "/same" } });
+	await runIfDue(r.p, { exclude: ["/same"] }, "tick");
+	assert.deepEqual(r.logs.filter((l) => l.level === "warn"), []);
+});
+
+test("exclude: everything excluded publishes an empty index (not a failure, not no-collections)", async () => {
+	const r = rig({ entries: [entry("posts", "one"), entry("posts", "two")] });
+	await runIfDue(r.p, {}, "tick");
+	const before = (await state(r.kv)).active!.version;
+	const result = await runIfDue(r.p, { exclude: ["/posts/*"] }, "nightly");
+	assert.ok(result.ok && "active" in result);
+	const { engine, active } = await loadActive(r.kv);
+	assert.deepEqual(urls(engine), []);
+	assert.deepEqual(engine.search("one"), []);
+	assert.notEqual(active.version, before);
+	assert.deepEqual([active.pages, active.records, active.skipped], [0, 0, 0]);
+	assert.deepEqual(Object.keys(active.locales), ["en"]);
+	const s = await state(r.kv);
+	assert.equal(s.last?.ok, true);
+	assert.equal(isDue(s, r.clock.now), false);
+	// Built again with nothing excluded, the entries are back.
+	await runIfDue(r.p, {}, "nightly");
+	assert.equal((await state(r.kv)).active!.version, before);
+});
+
+test("listPages: an item's word finds the page that lists it, and the same content builds the same version", async () => {
+	const talks = collection("talks", { supports: [], routable: false });
+	const options: PluginOptions = { listPages: [{ path: "/speaking", from: [{ collection: "talks", fields: ["title"] }], fallback: { title: "Speaking" } }] };
+	const r = rig({ collections: [collection("posts"), talks], entries: [entry("posts", "one"), entry("talks", null, { data: { title: "Nine hundred megabytes" } })] });
+	assert.equal((await runIfDue(r.p, options, "tick")).ok, true);
+	const { engine, active, file } = await loadActive(r.kv);
+	assert.deepEqual(engine.search("megabytes").map((h) => h.id), ["en:/speaking"]);
+	assert.deepEqual([active.pages, active.skipped, file.settings.types], [2, 0, { pages: { label: "Pages" }, posts: { label: "Posts" } }]);
+	assert.deepEqual(r.logs.filter((l) => l.level !== "info"), []);
+	await runIfDue(r.p, options, "nightly");
+	assert.equal((await state(r.kv)).active!.version, active.version);
+});
+
+test("listPages: a site with list pages but no search collection stays no-collections", async () => {
+	const r = rig({ collections: [collection("talks", { supports: [] })], entries: [entry("talks", "a")] });
+	const result = await runIfDue(r.p, { listPages: [{ path: "/speaking", from: [{ collection: "talks", fields: ["title"] }], fallback: { title: "Speaking" } }] }, "tick");
+	assert.deepEqual([result.ok, "code" in result && result.code], [false, "no-collections"]);
+});
+
+test("options arrive with a deploy, with no hook: a changed exclude, collections or clip is built by the next build", async () => {
+	for (const [name, options] of Object.entries({ exclude: { exclude: ["/posts/two"] }, collections: { collections: ["docs"] }, clip: { clip: 200 } })) {
+		const r = rig({ collections: [collection("posts"), collection("docs")], entries: [entry("posts", "one"), entry("posts", "two", { data: { title: "Two", content: portableText("word ".repeat(100)) } }), entry("docs", "intro")] });
+		await runIfDue(r.p, {}, "tick");
+		const before = (await state(r.kv)).active!.version;
+		r.clock.now += 60_000;
+		assert.deepEqual(await runIfDue(r.p, options, "tick"), { ok: true, skipped: "not-due" }, `${name}: a tick alone`);
+		await onContentEvent(r.p, "afterSave", { collection: "docs", content: { id: "x", status: "published" } }, options);
+		r.clock.now += QUIET_MS;
+		await runIfDue(r.p, options, "tick");
+		assert.notEqual((await state(r.kv)).active!.version, before, `${name}: any content change`);
+	}
 });
 
 test("clip is applied to the engine settings", async () => {

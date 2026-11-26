@@ -17,6 +17,8 @@ export interface SearchPorts {
 	kv: KvPort;
 	content: ContentPort;
 	schema: SchemaPort;
+	/** Taxonomy terms; read only with `taxonomyKeywords`. Left out: none can be read. */
+	terms?: TermsPort;
 	log: LogPort;
 	/** Queues the one-shot cron task `rebuild-soon` at `at` (EmDash `cron.schedule`). */
 	queue(at: Date): Promise<void>;
@@ -89,7 +91,7 @@ export interface ContentPort {
 	publicPath(collection: string, id: string): Promise<string | null>;
 	/**
 	 * The rules EmDash's resolver uses to build an entry's public path (optional). When given, the core
-	 * builds every path itself from the listed rows (`entryPath` in `records.ts`), with no query per entry;
+	 * builds every path itself from the listed rows (`entryPath` in `paths.ts`), with no query per entry;
 	 * `publicPath` is then not called. Left out: one `publicPath` call per entry.
 	 */
 	urlRules?(): UrlRules;
@@ -124,10 +126,20 @@ export interface CollectionInfo {
 	routable: boolean;
 	hidden: boolean;
 	urlPattern?: string | null;
+	/** The collection's field slugs. Left out: not known, so no check on them. */
+	fields?: string[];
 }
 
 export interface SchemaPort {
 	listCollections(): Promise<CollectionInfo[]>;
+}
+
+export interface TermsPort {
+	/**
+	 * The term labels of entries of one collection in one locale, per entry id and taxonomy name. An entry with no terms
+	 * may be left out. Batched: the caller gives the entries of one list page.
+	 */
+	labels(collection: string, ids: readonly string[], locale: string): Promise<ReadonlyMap<string, Readonly<Record<string, readonly string[]>>>>;
 }
 
 export interface LogPort {
@@ -140,9 +152,36 @@ export interface LogPort {
 // Options (code only, JSON only: EmDash writes them into generated code)
 // ---------------------------------------------------------------------------
 
+/** One page that lists collections (`listPages`). */
+export interface ListPage {
+	/** The page's site path, literal, with no base and no locale prefix ("/speaking"). */
+	path: string;
+	/** Where its words come from: whole collections (published, not `noIndex`, in the page's locale), in this order. `fields` hold a string or Portable Text. */
+	from: Array<{ collection: string; fields: string[] }>;
+	/** Makes the page in the default locale when no published entry of the indexed collections has the path. Left out: none is made. */
+	fallback?: { title: string; text?: string };
+	/** The type of the page `fallback` makes. Default "pages". */
+	type?: string;
+}
+
 export interface PluginOptions {
 	/** Collection slugs. Default: every collection with `search` in `supports`, `routable` and not `hidden`. */
 	collections?: string[];
+	/**
+	 * Site paths to leave out, as in `html()`: exact ("/speaking"), where each "*" segment is any one segment
+	 * ("/projects/*"). No base. A path with no locale prefix is left out in every locale.
+	 */
+	exclude?: string[];
+	/**
+	 * Pages whose theme route lists whole collections: the words of those entries go to the end of the page's text, so a
+	 * search for an item finds the page. See `ListPage`.
+	 */
+	listPages?: ListPage[];
+	/**
+	 * Taxonomies whose term labels are keywords of their entries (["category", "tag"]), after the entry's own keywords.
+	 * Default: none. A term set or renamed on its own fires no content hook (EmDash 1.4): it shows after the next build.
+	 */
+	taxonomyKeywords?: string[];
 	/** The size warning for each locale's index file, gzipped. Default 300 KB. */
 	budget?: { gzipKB: number };
 	/** Characters of each record's text the index keeps. Leave out to keep it whole. */

@@ -58,7 +58,7 @@ export default function search(options: SearchOptions): AstroIntegration {
 				onDemand = config.output === "server";
 				// Astro's locales are tags or { path, codes }; a record's locale is the tag, or the first code.
 				locales = (config.i18n?.locales ?? []).map((l) => (typeof l === "string" ? l : (l.codes[0] ?? l.path)));
-				bundle = await bundleScripts({ base: config.base, index: settings.default, shortcut: settings.shortcut, strings: settings.strings, browse: settings.browse, theme: settings.theme });
+				bundle = await bundleScripts({ base: config.base, index: settings.default, shortcut: settings.shortcut, strings: settings.strings, browse: settings.browse, theme: settings.theme, searchPage });
 
 				if (hasCollections(settings)) injectRoute({ pattern: `/${RECORDS_PATH}`, entrypoint: new URL(`./records-route${OWN_EXT}`, import.meta.url), prerender: true });
 				const modules: Record<string, string> = {

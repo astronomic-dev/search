@@ -333,11 +333,43 @@ test("exclude: a pattern that starts with any locale's prefix matches only that 
 	assert.equal((await shown("/en/speaking")).length, 6);
 });
 
-test("exclude: an encoded or literal asterisk is not a wildcard", async () => {
+test("exclude: an encoded asterisk is not a wildcard; a literal one inside a segment is", async () => {
 	const input = { collections: [collection("posts")], entries: [entry("posts", "*"), entry("posts", "a"), entry("posts", "a*")], urlRules: NO_I18N };
 	for (const p of ["/posts/%2A", "/posts/%2a"]) assert.deepEqual(await shownUrls(input, [p]), ["/posts/a", "/posts/a*"], p);
-	for (const p of ["/posts/a*", "/posts/a%2A"]) assert.deepEqual(await shownUrls(input, [p]), ["/posts/*", "/posts/a"], p);
+	assert.deepEqual(await shownUrls(input, ["/posts/a%2A"]), ["/posts/*", "/posts/a"]);
+	assert.deepEqual(await shownUrls(input, ["/posts/a*"]), ["/posts/*"]);
 	assert.deepEqual(await shownUrls(input, ["/posts/*"]), []);
+});
+
+test("exclude: case makes no difference, on the pattern or on the site, letters plain or encoded", async () => {
+	const input = { collections: [ROOT_PAGES, collection("posts", { urlPattern: "/Blog/{slug}" })], entries: [entry("pages", "Speaking"), entry("pages", "about"), entry("posts", "Café"), entry("posts", "b")], urlRules: NO_I18N };
+	for (const p of ["/speaking", "/SPEAKING", "/Speaking"]) assert.deepEqual(await shownUrls(input, [p]), ["/about", "/Blog/Caf%C3%A9", "/Blog/b"], p);
+	for (const p of ["/blog/café", "/BLOG/CAFÉ", "/blog/caf%C3%89", "/blog/caf%c3%a9"]) assert.deepEqual(await shownUrls(input, [p]), ["/Speaking", "/about", "/Blog/b"], p);
+	assert.deepEqual(await shownUrls(input, ["/blog/*"]), ["/Speaking", "/about"]);
+});
+
+test("exclude: a * inside a segment is any run of characters there, none too", async () => {
+	const input = {
+		collections: [ROOT_PAGES],
+		entries: ["sitemap-0.xml", "sitemap-index.xml", "sitemap-.xml", "sitemap.xml", "sitemap-0.xml.bak", "about"].map((s) => entry("pages", s)),
+		urlRules: NO_I18N,
+	};
+	assert.deepEqual(await shownUrls(input, ["/sitemap-*.xml"]), ["/sitemap.xml", "/sitemap-0.xml.bak", "/about"]);
+	assert.deepEqual(await shownUrls(input, ["/SITEMAP*"]), ["/about"]);
+	assert.deepEqual(await shownUrls(input, ["/*.xml"]), ["/sitemap-0.xml.bak", "/about"]);
+	// It stays inside its segment.
+	const nested = { collections: [collection("docs", { urlPattern: "/docs/{slug}" })], entries: [entry("docs", "a")], urlRules: NO_I18N };
+	assert.deepEqual(await shownUrls(nested, ["/doc*"]), ["/docs/a"]);
+	assert.deepEqual(await shownUrls(nested, ["/doc*/a"]), []);
+});
+
+test("exclude: a locale prefix in a pattern is found in any case", async () => {
+	const input: FakeContentInput = {
+		collections: [ROOT_PAGES],
+		entries: ["en", "fr"].flatMap((locale) => [entry("pages", "speaking", { locale }), entry("pages", "about", { locale })]),
+		urlRules: { siteLocale: "en", i18n: { defaultLocale: "en", locales: ["en", "fr"] } },
+	};
+	assert.deepEqual(await shownUrls(input, ["/FR/Speaking"]), ["/speaking", "/about", "/fr/about"]);
 });
 
 test("exclude: a page whose own first segment looks like a locale is not cut on a site with no i18n", async () => {

@@ -93,7 +93,8 @@ export function pageRecords(source: string, path: string, options: HtmlOptions, 
 	// Not one in a dialog or another dropped part.
 	const h1 = findShown(doc, (n) => n.name === "h1")[0];
 	const titleTag = first(doc, (n) => n.name === "title");
-	const title = (h1 && textOf(h1)) || (titleTag && textOf(titleTag)) || url;
+	const titleMeta = squash(attr(head("meta", (n) => attr(n, "name")?.toLowerCase() === "search:title"), "content") ?? "");
+	const title = titleMeta || (h1 && textOf(h1)) || (titleTag && textOf(titleTag)) || url;
 
 	let root: Node = doc;
 	if (options.selector) {

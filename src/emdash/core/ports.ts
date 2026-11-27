@@ -82,7 +82,11 @@ export interface EmDashEntry {
 }
 
 export interface ContentPort {
-	/** One page of a collection (every status and locale; the core applies the skip rules). */
+	/**
+	 * One page of a collection (every status and locale; the core applies the skip rules), in EmDash's default list
+	 * order: newest created first, then the higher id (`ContentRepository.findMany`), the same order the theme's
+	 * `getEmDashCollection` reads (the loader's default), so the first published entry is the one a theme takes.
+	 */
 	list(collection: string, cursor?: string): Promise<{ items: EmDashEntry[]; nextCursor?: string }>;
 	/**
 	 * The entry's public pathname from EmDash's own resolver (`getPublicUrl`), kept as given (locale
@@ -164,6 +168,24 @@ export interface ListPage {
 	type?: string;
 }
 
+/**
+ * One `textFields` entry: a field slug, a prefix ending in "*", or a field of blocks with the keys whose words count
+ * (`{ field: "case_blocks", keys: ["heading", "text", "steps"] }`; everything under a listed key counts).
+ */
+export type TextField = string | { field: string; keys: string[] };
+
+/** One switch rule (`excludeWhen`). */
+export interface ExcludeWhen {
+	/** A collection with one entry that holds the switch (a settings collection). It needs no search, route or URL. */
+	collection: string;
+	/** The field of that entry that holds the switch. */
+	field: string;
+	/** The field values that turn the paths off. `null` also stands for an empty field and for no published entry. */
+	values: Array<string | number | boolean | null>;
+	/** Site paths, as in `exclude`: exact, or with a `*` for any one segment. */
+	paths: string[];
+}
+
 export interface PluginOptions {
 	/** Collection slugs. Default: every collection with `search` in `supports`, `routable` and not `hidden`. */
 	collections?: string[];
@@ -178,10 +200,23 @@ export interface PluginOptions {
 	 */
 	listPages?: ListPage[];
 	/**
+	 * Site paths to leave out while a switch is set: at each build the plugin reads the one published entry of
+	 * `collection`, and when its `field` holds one of `values`, the `paths` are left out as `exclude` leaves them out. See
+	 * `ExcludeWhen`.
+	 */
+	excludeWhen?: ExcludeWhen[];
+	/**
 	 * Taxonomies whose term labels are keywords of their entries (["category", "tag"]), after the entry's own keywords.
 	 * Default: none. A term set or renamed on its own fires no content hook (EmDash 1.4): it shows after the next build.
 	 */
 	taxonomyKeywords?: string[];
+	/**
+	 * More fields to search, per collection slug: their words follow the entry's lead text, before `content`
+	 * (`{ projects: ["problem", "result", "case_*"], areas: ["intro"] }`). A field holds a string, Portable Text or a list
+	 * of blocks. A name that ends in "*" is every field whose slug starts with the rest, in the collection's field order.
+	 * `{ field: "case_blocks", keys: ["heading", "text"] }` reads only those keys of each block. Default: none.
+	 */
+	textFields?: Record<string, TextField[]>;
 	/** The size warning for each locale's index file, gzipped. Default 300 KB. */
 	budget?: { gzipKB: number };
 	/** Characters of each record's text the index keeps. Leave out to keep it whole. */

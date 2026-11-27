@@ -26,7 +26,7 @@ import { configJson, readSettings } from "./core/settings.ts";
 /** The plugin id; it shows in the route URLs (`/_emdash/api/plugins/astronomic-search/...`). */
 export const PLUGIN_ID = "astronomic-search";
 /** The package version; the boot's `?ver=` changes with it. A unit test keeps it equal to package.json. */
-export const VERSION = "0.2.2";
+export const VERSION = "0.2.3";
 export const CAPABILITIES = ["content:read", "schema:read", "hooks.page-fragments:register"] as const;
 export const ADMIN_ENTRY = "@astronomic-dev/search/emdash/admin";
 export const ADMIN_PAGES = [{ path: "/settings", label: "Search", icon: "magnifying-glass" }];

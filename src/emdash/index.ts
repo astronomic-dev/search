@@ -14,13 +14,15 @@
  */
 import type { PluginDescriptor, ResolvedPlugin } from "emdash";
 import { definePlugin } from "emdash";
+import { checkExcludeWhen } from "./core/exclude-when.ts";
 import { checkListPages } from "./core/list-pages.ts";
 import { checkExclude } from "./core/paths.ts";
 import type { PluginOptions } from "./core/ports.ts";
 import { checkTaxonomyKeywords } from "./core/records.ts";
+import { checkTextFields } from "./core/text-fields.ts";
 import { ADMIN_ENTRY, ADMIN_PAGES, CAPABILITIES, PLUGIN_ID, pluginDefinition, VERSION } from "./plugin.ts";
 
-export type { ListPage as SearchListPage, PluginOptions as SearchPluginOptions } from "./core/ports.ts";
+export type { ExcludeWhen as SearchExcludeWhen, ListPage as SearchListPage, PluginOptions as SearchPluginOptions, TextField as SearchTextField } from "./core/ports.ts";
 
 const ENTRYPOINT = "@astronomic-dev/search/emdash";
 
@@ -42,7 +44,9 @@ export function search(options: PluginOptions = {}): PluginDescriptor<PluginOpti
 	}
 	if (options.exclude !== undefined) checkExclude(options.exclude);
 	if (options.listPages !== undefined) checkListPages(options.listPages);
+	if (options.excludeWhen !== undefined) checkExcludeWhen(options.excludeWhen);
 	if (options.taxonomyKeywords !== undefined) checkTaxonomyKeywords(options.taxonomyKeywords);
+	if (options.textFields !== undefined) checkTextFields(options.textFields);
 	return {
 		id: PLUGIN_ID,
 		version: VERSION,

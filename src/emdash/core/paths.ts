@@ -130,7 +130,7 @@ export function checkExclude(input: unknown): asserts input is string[] {
  * Each segment of a path in one spelling, so "/café", "/caf%C3%A9" and "/caf%c3%a9" are the same. An encoded slash
  * stays encoded, and so does an asterisk ("%2A"), so it is never read as a wildcard.
  */
-export const canonicalPath = (path: string): string =>
+export const canonicalPath = (path: string, fold = false): string =>
 	path
 		.split("/")
 		.map((s) => {
@@ -140,18 +140,24 @@ export const canonicalPath = (path: string): string =>
 			} catch {
 				// Not valid percent-encoding: the text as typed.
 			}
-			return encodeURIComponent(plain).replaceAll("*", "%2A");
+			// `fold`: in lowercase too, for checks that ignore case ("/Café" and "/caf%C3%A9").
+			return encodeURIComponent(fold ? plain.toLowerCase() : plain).replaceAll("*", "%2A");
 		})
 		.join("/");
 
 /** A site path in one spelling, with no repeated or trailing slash. */
 export const canonicalSitePath = (path: string): string => canonicalPath(normalizePath(path));
 
-/** A pattern in the same spelling; its "*" segments stay wildcards. */
+/** A pattern in the same spelling, in lowercase; each "*" stays a wildcard, a whole segment or part of one. */
 const canonicalPattern = (pattern: string): string =>
 	pattern
 		.split("/")
-		.map((s) => (s === "*" ? s : canonicalPath(s)))
+		.map((s) =>
+			s
+				.split("*")
+				.map((part) => canonicalPath(part, true))
+				.join("*"),
+		)
 		.join("/");
 
 /** The URL prefix of a locale ("/fr") in one spelling; "" for none. With no URL rules: "". */
@@ -171,17 +177,21 @@ export const startsWithLocale = (path: string, rules: UrlRules | undefined): boo
 export const neutralPath = (url: string, locale: string | null, rules: UrlRules | undefined): string =>
 	canonicalSitePath(canonicalPath(url).slice(localePrefix(locale, rules).length) || "/");
 
+const LOOSE = { loose: true } as const;
+
 /**
  * The `exclude` check for one build (`matchPath`, so a trailing slash makes no difference).
  * - A pattern that starts with the URL prefix of one of the site's locales ("/fr/speaking") is compared with that
  *   locale's whole paths only. The locale wins over a page slug that equals its prefix.
  * - Any other pattern is compared with the path without its locale prefix: "/speaking" leaves out "/speaking" and
  *   "/fr/speaking". A "*" never stands for the prefix, so a pattern means the same pages in every locale.
- * With no URL rules the whole path is compared.
+ * With no URL rules the whole path is compared. Case makes no difference, and a "*" inside a segment is any run of
+ * characters there ("/sitemap-*.xml").
  */
 export function excluder(exclude: string[] | undefined, rules: UrlRules | undefined): (url: string, locale: string | null) => boolean {
 	if (!exclude || exclude.length === 0) return () => false;
-	const prefixes = localePrefixes(rules);
+	// In lowercase, as the patterns: the check ignores case.
+	const prefixes = localePrefixes(rules).map((p) => canonicalPath(p, true));
 	// Patterns by the locale prefix they spell out; "" for none.
 	const byPrefix = new Map<string, string[]>();
 	for (const pattern of exclude.map(canonicalPattern)) {
@@ -190,9 +200,9 @@ export function excluder(exclude: string[] | undefined, rules: UrlRules | undefi
 	}
 	const plain = byPrefix.get("") ?? [];
 	return (url, locale) => {
-		const path = canonicalPath(url);
-		const prefix = localePrefix(locale, rules);
-		if (prefix === "") return matchPath(path, plain);
-		return matchPath(path.slice(prefix.length) || "/", plain) || matchPath(path, byPrefix.get(prefix) ?? []);
+		const path = canonicalPath(url, true);
+		const prefix = canonicalPath(localePrefix(locale, rules), true);
+		if (prefix === "") return matchPath(path, plain, LOOSE);
+		return matchPath(path.slice(prefix.length) || "/", plain, LOOSE) || matchPath(path, byPrefix.get(prefix) ?? [], LOOSE);
 	};
 }

@@ -142,6 +142,14 @@ When two sources give the same URL, the collection record wins over the scanned 
 
 After the build, every collection and `html()` record URL must be a built page (`<path>.html` or `<path>/index.html`), and every section's anchor an `id` that page renders; the build fails with a list otherwise, so a `url` pattern that misses its route, or a page left out of `getStaticPaths` but not by `filter`, never makes a dead result. With `output: "server"` a page may be rendered on demand, so these are warnings. A `records()` hook's URLs are its own and are not checked. The dev server has no built pages and does not check.
 
+### Result title
+
+A scanned page's result title is its `<h1>`, else its `<title>`. A page can set another one in its head, so a home page whose headline is a slogan shows as "Home":
+
+```html
+<meta name="search:title" content="Home">
+```
+
 ### Keywords
 
 A page can carry extra words that people search for but the page does not use, so "start" finds a page titled "Lodestar". Keywords are indexed in the `keywords` field, with the page's facet values. Each source has its own way to set them:
@@ -658,9 +666,11 @@ Options (in code only, and plain JSON only, because EmDash passes them to the pl
 | `collections` | every collection with search support that is routable and not hidden | The collection slugs to index. A listed collection that is not routable is skipped with a build warning. |
 | `budget` | `{ gzipKB: 300 }` | The size warning for each locale's index, gzipped. |
 | `clip` | whole text | Characters of each entry's text the index keeps. |
-| `exclude` | none | Site paths to leave out of search, such as a page the theme has turned off: `["/speaking", "/projects/*"]`. A `*` is any one segment. See [Leave pages out](#leave-pages-out). |
+| `exclude` | none | Site paths to leave out of search, such as a page the theme has turned off: `["/speaking", "/projects/*", "/sitemap-*.xml"]`. Case makes no difference. A `*` segment is any one segment; a `*` inside a segment is any run of characters there. See [Leave pages out](#leave-pages-out). |
+| `excludeWhen` | none | Site paths to leave out while a switch in a settings entry is set, such as a part the site owner has turned off in the admin: `[{ collection: "details", field: "switch_areas", values: ["off"], paths: ["/areas", "/areas/*"] }]`. See [Leave pages out](#leave-pages-out). |
 | `listPages` | none | Pages that list whole collections, such as a talks page or a FAQ, so a search for an item finds the page. See [List pages](#list-pages). |
 | `taxonomyKeywords` | none | Taxonomies whose term labels are keywords of their entries: `["category", "tag"]`. See [Categories and tags](#categories-and-tags). |
+| `textFields` | none | More fields to search, per collection: `{ projects: ["problem", "case_*"], areas: ["intro"] }`. See [More fields](#more-fields). |
 | `filesPath` | `/_search/embed/` | Where the site serves the embed. Must match `searchFiles({ path })`. |
 
 **Check the layout.** The plugin's two tags print only where your layout renders `<EmDashHead>` and `<EmDashBodyEnd page={page} />`. Most EmDash themes do, but a hand-made layout may not. To check: open a public page, view its source, and look for `data-search-config` near the end of `<body>`. If it is not there, add `<EmDashBodyEnd page={page} />` before `</body>`.
@@ -735,7 +745,7 @@ The admin page shows why the last build failed, and the old index stays live. On
 ### What is indexed
 
 - One record per published entry in the indexed collections, one index per locale. The URL comes from EmDash itself, so URL patterns, locale paths and trailing slashes match the site.
-- The text is the plain text of the content, then the excerpt, summary, description and SEO description. A `search_keywords` field (a list or a comma list) adds keywords, and so do the terms in [`taxonomyKeywords`](#categories-and-tags). EmDash field slugs are lowercase, so name it that way.
+- The text is the first of the excerpt, summary, description and SEO description, then the fields in [`textFields`](#more-fields), then the plain text of the content. A `search_keywords` field (a list or a comma list) adds keywords, and so do the terms in [`taxonomyKeywords`](#categories-and-tags). EmDash field slugs are lowercase, so name it that way.
 - Pages in `listPages` also have the words of the entries they list. See [List pages](#list-pages).
 - Skipped: drafts, scheduled entries until they publish, entries with `seo.noIndex` on, entries with no public URL, and paths in `exclude`.
 - No heading records yet: EmDash's renderer prints no heading ids, so a result links to the page, not a section. Heading text is still searched.
@@ -748,11 +758,27 @@ Use `exclude` for an entry that is published but has no page: a theme can turn a
 search({ exclude: ["/speaking", "/projects/*"] });
 ```
 
-- A path is exact. A `*` is any one segment: `/projects/*` leaves out every project, but not `/projects` itself.
+- A path is exact, in any case: `/Speaking` and `/speaking` are the same. A `*` segment is any one segment: `/projects/*` leaves out every project, but not `/projects` itself. A `*` inside a segment is any run of characters in that segment, none too: `/sitemap-*.xml` leaves out `/sitemap-0.xml` and `/sitemap-index.xml`, but not `/sitemap.xml`. An encoded `%2A` is a plain asterisk.
 - Write site paths, starting with `/`, with no base (a value that is not a list of these throws). A trailing slash makes no difference. Letters can be plain or encoded (`/café` or `/caf%C3%A9`).
 - A path with no locale prefix is left out in every locale: `/speaking` also leaves out `/fr/speaking`. To leave a page out in one locale only, write its prefix: `/fr/speaking`. A first segment that is a locale's prefix always means the locale, even if a page has the same slug. A `*` never stands for the prefix.
-- A change to an option (`exclude`, `collections`, `clip`, `listPages`, `taxonomyKeywords`) is in your code, so EmDash sends no content event for it. It shows after the next build: click Rebuild now after you deploy, or wait for the next content change or the nightly build.
-- `exclude` covers this index only. EmDash's own search, which the theme's server list uses, still finds the entry.
+- A change to an option (`exclude`, `excludeWhen`, `collections`, `clip`, `listPages`, `taxonomyKeywords`, `textFields`) is in your code, so EmDash sends no content event for it. It shows after the next build: click Rebuild now after you deploy, or wait for the next content change or the nightly build.
+- `exclude` and `excludeWhen` cover this index only. EmDash's own search, which the theme's server list uses, still finds the entry.
+
+**While a switch is off.** Use `excludeWhen` when the site owner turns a part of the site on and off in the admin, with a field of a settings entry (a select of `on` and `off`, say). At each build the plugin reads that entry, and while the field holds one of `values`, the `paths` are left out as `exclude` leaves them out.
+
+```js
+search({
+	excludeWhen: [{ collection: "details", field: "switch_areas", values: ["off"], paths: ["/areas", "/areas/*"] }],
+});
+```
+
+- `collection` is a collection with one entry. It needs no search support and no URL. The plugin reads its newest published entry, the one a theme that lists the collection gets first (EmDash lists the newest first). A second published entry is a build warning, and the newest one is read.
+- `paths` work as in `exclude`, and the two lists join: a path left out gets no page from `listPages` either.
+- An empty field and no published entry both read as `null`. Put `null` in `values` when the part is off by default.
+- A collection or field the site does not have, or a field that holds a list or an object, is a build warning, and the rule leaves nothing out.
+- If the entry cannot be read, the build fails, the live index stays as it was, and the next tick tries again. A read error never brings back the pages of a part that is off.
+- Only published content counts. Publishing the entry is a content change, so the index is rebuilt within about a minute. With `collections` listed, the rule's collection counts too.
+- When it shows: a part turned off leaves search on page loads after the next build that succeeds. A tab that loaded the index earlier keeps the old results until it reloads, and while builds fail, the old index stays live.
 
 ### List pages
 
@@ -798,6 +824,27 @@ search({ taxonomyKeywords: ["category", "tag"] });
 - A label is the one in the entry's locale, else the one in the default locale. The terms of an entry in `listPages` do not go to the page that lists it.
 - **When a change shows.** Saving or publishing the entry rebuilds the index as usual. But setting a term in the admin on its own, and renaming or deleting a term, send no content event in EmDash 1.4. They show after the next build: the next content change, Rebuild now or the nightly build.
 - Cost: about 2 more D1 queries per 100 entries (more on a site whose entries are in several locales). If EmDash cannot read the terms, the build warns and goes on without them.
+
+### More fields
+
+By default an entry's text is its lead (the first of `excerpt`, `summary`, `description` and the SEO description) and its Portable Text `content`. `textFields` names more fields to search, per collection, such as a project's case study or an area's intro. Their words follow the lead, before the content.
+
+```js
+search({
+	textFields: {
+		projects: ["problem", "approach", "result", "case_*"],
+		areas: ["intro"],
+	},
+});
+```
+
+- A field holds a string, Portable Text, or a list of blocks of your theme's own types: each block's text, such as its heading, text and list items. Images, links and anything else add nothing.
+- A name that ends in `*` is every field whose slug starts with the rest, in the collection's field order: `case_*` takes `case_title`, `case_lede` and `case_blocks`.
+- For a list of blocks, `{ field: "case_blocks", keys: ["heading", "text", "steps"] }` reads only the words under those keys of each block, at any depth (a `steps` list gives each step's words), so a layout value such as `side: "end"` stays out of search. Without `keys`, every string of a block counts. The entry sets the keys of that field when a `*` name takes it too.
+- `title`, `content` and `search_keywords` are read already, so they are left out. The lead field is not added twice.
+- A field the collection does not have, a `*` no field matches, and a collection that is not indexed are build warnings. A name that is not a field slug throws.
+- Each entry gets up to 20,000 characters from these fields; the rest is cut, with a build warning. `clip` and the size budget still apply, and the index is public, so list only fields the page shows.
+- A change to the option shows after the next build: click Rebuild now after you deploy.
 
 ### How fast a change shows
 
@@ -891,7 +938,7 @@ The engine-only columns time MiniSearch alone. A full dialog query (the engine, 
 
 The boot script on every page is about 4 KB gzip (4.07 KB measured, budget 4.07 KB); about 2 KB of it is the phone stand-in box (see [Keyboard](#keyboard)). The app (engine, controller, browser behavior and dialog) is about 25 KB gzip (25.25 KB measured, budget 25.26 KB) and loads only on first use. MiniSearch, the engine, is about 6 KB of that.
 
-The embed's boot is 6.24 KB gzip (budget 6.25 KB); it holds the takeover, placements and the phone proxy, so it is larger than the integration's. Its dialog chunk is 26.26 KB (budget 26.48 KB), its results page chunk 22.64 KB (budget 24.62 KB), and the boot plus the dialog, the cold transfer on first use, 32.50 KB (budget 32.51 KB). The budgets are in `test/budgets.json`, and the tests fail past them. More: [astronomic.dev/docs/search/performance](https://astronomic.dev/docs/search/performance).
+The embed's boot is 6.27 KB gzip (budget 6.28 KB); it holds the takeover, placements and the phone proxy, so it is larger than the integration's. Its dialog chunk is 26.26 KB (budget 26.48 KB), its results page chunk 22.64 KB (budget 24.62 KB), and the boot plus the dialog, the cold transfer on first use, 32.53 KB (budget 32.54 KB). The budgets are in `test/budgets.json`, and the tests fail past them. More: [astronomic.dev/docs/search/performance](https://astronomic.dev/docs/search/performance).
 
 **When to move on (later).** Every record loads into the visitor's browser. At about 5,000 page and heading records, the load on a slowed-down phone passes half a second, and a site that big should move to a Pagefind-based engine, which loads only the parts of the index a query needs. That engine is planned, not built yet.
 

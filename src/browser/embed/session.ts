@@ -12,6 +12,7 @@
  * or keyboard open with the app loaded opens the real dialog at once. A cold one shows the proxy too, so typing is
  * never lost.
  */
+import type { EmbedConfig } from "../config.ts";
 import type { EmbedApp } from "../embed-app.ts";
 import type { SearchElement } from "../../ui/element.ts";
 import { placementText } from "./open-from.ts";
@@ -52,13 +53,14 @@ const caretOf = (input: HTMLInputElement): [number, number] => {
 export type Release = (field: HTMLInputElement) => unknown;
 
 /**
- * The open function. `defaultPlaceholder` is the proxy's text when the source's placement has none. `onFail` runs
+ * The open function. The config's placeholder is the proxy's text when the source's placement has none. `onFail` runs
  * when the app fails to load during the current open: the proxy's text goes back to the field (focused) or a link
- * follows its href, so the page works as it does with no JavaScript. `theme` (the config's) goes on the proxy. A theme
+ * follows its href, so the page works as it does with no JavaScript. The config's `theme` goes on the proxy. A theme
  * field's open (`release`) also fails when the dialog's index fails to load (a 503 before the first build): the field is
- * released, the dialog closes, and the text and focus go back to the field.
+ * released, the dialog closes, and the text and focus go back to the field. A link that goes to the results page
+ * (the config's `results`, with no query) gets the text typed meanwhile as its `queryParam`, so the draft is not lost.
  */
-export function createOpen(doc: Document, app: AppHandle, defaultPlaceholder: string, onFail: () => void, theme?: string, release?: Release): Open {
+export function createOpen(doc: Document, app: AppHandle, config: EmbedConfig, onFail: () => void, release?: Release): Open {
 	// Constants first in this function, not the module, so the build inlines them.
 	/**
 	 * Why a session ends: quietly (handed off and settled, closed, dismissed or replaced), Escape in the proxy, a submit
@@ -102,7 +104,12 @@ export function createOpen(doc: Document, app: AppHandle, defaultPlaceholder: st
 				field.value = text;
 				field.focus({ preventScroll: true });
 				field.dispatchEvent(new Event("input"));
-			} else if (opener instanceof HTMLAnchorElement) location.assign(opener.href);
+			} else if (opener instanceof HTMLAnchorElement) {
+				// A link to the results page itself (no query) gets the text typed meanwhile; any other link is followed as it
+				// is. The config's results URL parses against the page (config.ts checks it so).
+				const to = new URL(config.results, doc.baseURI);
+				location.assign(text && to.href == opener.href ? (to.searchParams.set(config.queryParam, text), to) : opener.href);
+			}
 		};
 		cur = end;
 		if (fallback) timer = setTimeout(end, DEADLINE, FAIL);
@@ -130,8 +137,8 @@ export function createOpen(doc: Document, app: AppHandle, defaultPlaceholder: st
 		const ready = app.ready();
 		const value = field?.value ?? "";
 		if (ready && !touch) return toDialog(ready, value, field ? caretOf(field) : undefined);
-		const text = placementText(source) || defaultPlaceholder;
-		proxy = showProxy(doc, text, opener, theme);
+		const text = placementText(source) || config.strings.placeholder || "Search";
+		proxy = showProxy(doc, text, opener, config.theme);
 		const input = proxy.input;
 		input.value = value;
 		// Its reasons to leave are QUIET and ESCAPE.

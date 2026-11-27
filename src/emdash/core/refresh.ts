@@ -36,11 +36,13 @@ export interface ContentEventPayload {
  * Whether a hook event can change live content. `afterSave` skips only a new draft: EmDash 1.4 gives no
  * previous status, so a save of an existing entry counts even as a draft (it may have been published and
  * just been saved back to draft). With `collections` listed, changes to
- * other collections (but the ones `listPages` reads) do not count; with the default (every search collection), every collection counts, since
+ * other collections (but the ones `listPages` and `excludeWhen` read) do not count; with the default (every search collection), every collection counts, since
  * telling which ones opt in would cost a schema read inside a 5 s hook.
  */
 export function countsAsChange(event: ContentEvent, payload: ContentEventPayload, options: PluginOptions = {}): boolean {
-	const listed = () => options.listPages?.some((page) => page.from.some((f) => f.collection === payload.collection)) === true;
+	const listed = () =>
+		options.listPages?.some((page) => page.from.some((f) => f.collection === payload.collection)) === true ||
+		options.excludeWhen?.some((rule) => rule.collection === payload.collection) === true;
 	if (options.collections && !options.collections.includes(payload.collection) && !listed()) return false;
 	if (event === "afterSave") return payload.content?.status === "published" || payload.isNew !== true;
 	return true;

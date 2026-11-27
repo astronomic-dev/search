@@ -17,6 +17,7 @@
  * - Text: the first of `excerpt`, `summary`, `description`, `seo.description`, then the plain text of the
  *   Portable Text `content` (every block, headings too). No heading records: EmDash's renderer prints no
  *   heading ids, and the package takes anchors only from what the page renders.
+ * - `textFields` adds the words of more fields per collection after the lead text (text-fields.ts). No query.
  * - Keywords: the `search_keywords` field (an array or a comma list), or `searchKeywords`. With `taxonomyKeywords`, the
  *   labels of the entry's terms follow. One read per list page and locale of its entries; EmDash 1.4 makes it one query
  *   per 50 entries: 2 more per 100 entries in one locale, rounded up per locale (so 5 to 7 instead of 3 to 5), plus one
@@ -28,14 +29,17 @@
  *   each `from` collection once, also when that collection is indexed or read by two pages: nothing more for an
  *   indexed one, 3 to 5 queries per 100 published entries for any other. No query per item.
  * - `exclude` (site path patterns) leaves entries out by their public path. Like drafts, they are not counted as
- *   skipped. See `excluder`.
+ *   skipped. See `excluder`. `excludeWhen` adds paths to it at each build, from a switch entry (exclude-when.ts): one
+ *   more list read (2 to 3 queries) per rule collection.
  *
  * Platform-free: no `emdash`, `node:*`, `react` or `astro` imports.
  */
 import { foldText, squash } from "../../core/text.ts";
 import type { PageRecord, SearchRecord } from "../../core/types.ts";
 import { firstText, isText, portableTextToPlain } from "./entry-text.ts";
+import { excludeWhenPaths } from "./exclude-when.ts";
 import { createListPages } from "./list-pages.ts";
+import { textFieldsReader, type TextFieldsReader } from "./text-fields.ts";
 import { entryPath, excluder, indexLocale } from "./paths.ts";
 import type { CollectionInfo, ContentPort, EmDashEntry, PluginOptions, SchemaPort, TermsPort } from "./ports.ts";
 
@@ -59,12 +63,13 @@ export function keywordList(v: unknown): string[] {
 export const isIndexable = (e: EmDashEntry): boolean => e.status === "published" && e.seo?.noIndex !== true;
 
 /** The page record of one entry at its public path. */
-export function entryRecord(e: EmDashEntry, url: string, defaultLocale: string): PageRecord {
+export function entryRecord(e: EmDashEntry, url: string, defaultLocale: string, fields?: TextFieldsReader | null): PageRecord {
 	const d = e.data ?? {};
 	const locale = isText(e.locale) ? e.locale : defaultLocale;
 	const title = squash(firstText(d.title, d.name, e.seo?.title, e.slug) ?? e.id);
 	const lead = firstText(d.excerpt, d.summary, d.description, e.seo?.description) ?? "";
-	const text = squash(`${lead} ${portableTextToPlain(d.content)}`);
+	const extra = fields?.(e.type, e, lead) ?? "";
+	const text = squash(`${lead} ${extra} ${portableTextToPlain(d.content)}`);
 	// EmDash field slugs are lowercase (`search_keywords`); `searchKeywords` is kept as an alias.
 	const keywords = keywordList(d.search_keywords ?? d.searchKeywords);
 	return { id: `${locale}:${url}`, kind: "page", locale, type: e.type, url, title, text, facets: {}, source: "emdash", ...(keywords.length > 0 ? { keywords } : {}) };
@@ -145,10 +150,13 @@ export async function collectRecords(ports: { content: ContentPort; schema: Sche
 	// Read once per build: every path then comes from the listed rows (no query per entry).
 	const rules = content.urlRules?.();
 	const defaultLocale = indexLocale(content.defaultLocale(), rules);
-	const excluded = excluder(options.exclude, rules);
+	// The switch entries are read first: a failed read stops the build before anything else is read (exclude-when.ts).
+	const switched = collections.length > 0 ? await excludeWhenPaths(content, all, options.excludeWhen, warnings) : [];
+	const excluded = excluder([...(options.exclude ?? []), ...switched], rules);
 	// With no search collection the build stops (`no-collections`), so list pages read nothing.
 	const lists = collections.length > 0 ? createListPages(options.listPages, { rules, defaultLocale: content.defaultLocale(), all, excluded, warnings }) : null;
 	const readTerms = termReader(ports.terms, options, content.defaultLocale(), warnings);
+	const readFields = textFieldsReader(options.textFields, collections, all, warnings);
 	let skipped = 0;
 	// One scan per collection, also when it is indexed and read by a list page.
 	const indexed = new Set(collections.map((c) => c.slug));
@@ -175,7 +183,7 @@ export async function collectRecords(ports: { content: ContentPort; schema: Sche
 					continue;
 				}
 				// Stored under the code the page's <html lang> gives; the URL above keeps the custom path.
-				const r = entryRecord(e.locale ? { ...e, locale: indexLocale(e.locale, rules) } : e, url, defaultLocale);
+				const r = entryRecord(e.locale ? { ...e, locale: indexLocale(e.locale, rules) } : e, url, defaultLocale, readFields);
 				(byLocale[r.locale] ??= []).push(r);
 				lists?.owner(e, url, r);
 				rows.push({ e, record: r });

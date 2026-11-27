@@ -165,6 +165,32 @@ test("a * matches one segment in any place, so a list's paged forms can be left 
 	assert.equal(matchPath("/uix/docs/theming", ["/ui/*/*"]), false);
 });
 
+test("matchPath, by default as html() uses it, keeps case and whole-segment *", () => {
+	assert.equal(matchPath("/Docs", ["/docs"]), false);
+	assert.equal(matchPath("/Docs/a", ["/docs/*"]), false);
+	assert.equal(matchPath("/docs/a/", ["/docs/*"]), true);
+	assert.equal(matchPath("/sitemap-0.xml", ["/sitemap-*.xml"]), false);
+	assert.equal(matchPath("/sitemap-*.xml", ["/sitemap-*.xml"]), true);
+});
+
+test("matchPath loose (the EmDash plugin's exclude) ignores case, and a * inside a segment is any run of characters there", () => {
+	const loose = { loose: true };
+	assert.equal(matchPath("/Pricing/", ["/pricing"], loose), true);
+	assert.equal(matchPath("/pricing", ["/PRICING"], loose), true);
+	assert.equal(matchPath("/UI/Components/Button", ["/ui/components/*"], loose), true);
+	assert.equal(matchPath("/sitemap-0.xml", ["/sitemap-*.xml"], loose), true);
+	assert.equal(matchPath("/sitemap-.xml", ["/sitemap-*.xml"], loose), true);
+	assert.equal(matchPath("/Sitemap-Index.XML", ["/sitemap-*.xml"], loose), true);
+	assert.equal(matchPath("/sitemap.xml", ["/sitemap-*.xml"], loose), false);
+	assert.equal(matchPath("/sitemap-0.xml/x", ["/sitemap-*.xml"], loose), false);
+	assert.equal(matchPath("/a/sitemap-0.xml", ["/sitemap-*.xml"], loose), false);
+	assert.equal(matchPath("/docs/a", ["/doc*"], loose), false);
+	assert.equal(matchPath("/a.b(c)+", ["/a.b(c)+"], loose), true);
+	assert.equal(matchPath("/axb(c)+", ["/a.b(c)+"], loose), false);
+	assert.equal(matchPath("/x/y", ["/*/y*"], loose), true);
+	assert.equal(matchPath("/", ["/*"], loose), false);
+});
+
 test("the HTML scan reads every built page but noindex and 404", async () => {
 	const out = await scanHtml(dist, html({}), ctx);
 	const pages = out.records.filter((s) => s.record.kind === "page").map((s) => s.record);
@@ -373,4 +399,11 @@ test("a > inside a quoted attribute value, single or double, leaks no attribute 
 	const got = pageRecords(page, "/a", {}, ctx, "a.html") ?? [];
 	assert.equal(got[0]?.record.title, "A");
 	assert.equal(got[0]?.record.text, "One. Two three.");
+});
+
+test("html(): a search:title meta sets the result title", () => {
+	const page = '<html><head><title>Brassfield</title><meta name="search:title" content=" Home "></head><body><main><h1>Leaks fixed same day</h1></main></body></html>';
+	assert.equal(pageRecords(page, "/", {}, ctx, "index.html")?.[0]?.record.title, "Home");
+	const plain = '<html><head><title>Brassfield</title></head><body><main><h1>Leaks fixed same day</h1></main></body></html>';
+	assert.equal(pageRecords(plain, "/", {}, ctx, "index.html")?.[0]?.record.title, "Leaks fixed same day");
 });
